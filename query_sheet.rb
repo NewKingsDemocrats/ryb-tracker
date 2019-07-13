@@ -45,14 +45,27 @@ def read_sheet(spreadsheet_id, range)
     range,
   ).values
 
-  keys = values.first
+  append_sheet(values[2])
 
-  values[1..-1].map do |row|
-    row.each_with_index.reduce({}) do |obj, (value, index)|
-      obj[keys[index]] = value
-      obj
-    end
-  end
+#  keys = values.first
+#
+#  values[1..-1].map do |row|
+#    row.each_with_index.reduce({}) do |obj, (value, index)|
+#      obj[keys[index]] = value
+#      obj
+#    end
+#  end
+end
+
+def append_sheet(value)
+  value2 = Google::Apis::SheetsV4::ValueRange.new(values: [value])
+  puts 'hello world'
+  service.append_spreadsheet_value(
+    '1GMjgr9iws3mkuCM5Le7TQOEbjnB5d0DVMPDMbRcOEqw', 
+    'Candidate View', 
+    value2,
+    value_input_option: 'RAW',
+  )
 end
 
 # def get_spreadsheet_info(spreadsheet_id)

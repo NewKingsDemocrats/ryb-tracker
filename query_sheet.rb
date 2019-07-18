@@ -71,7 +71,7 @@ def read_sheet(spreadsheet_id, range)
     range,
   ).values
 
-  append_sheet(values[2])
+  test_append_sheet(values[2])
 
 #  keys = values.first
 #
@@ -83,13 +83,22 @@ def read_sheet(spreadsheet_id, range)
 #  end
 end
 
-def append_sheet(value)
-  value2 = Google::Apis::SheetsV4::ValueRange.new(values: [value])
-  puts 'hello world'
+def test_append_sheet(value)
+  puts 'Testing append sheet'
+  ad = 56
+  append_user_to_ad_sheet(ad, value)
+end
+
+def append_user_to_ad_sheet(ad, user)
+  # TODO(turnbull): Get the correct sheet ID from the ad.
+  ad_sheet_id = '1GMjgr9iws3mkuCM5Le7TQOEbjnB5d0DVMPDMbRcOEqw'
+  # TODO(turnbull): Turn the user object into the formatted value for the new sheet.
+  value = Google::Apis::SheetsV4::ValueRange.new(values: [user])
+
   service.append_spreadsheet_value(
-    '1GMjgr9iws3mkuCM5Le7TQOEbjnB5d0DVMPDMbRcOEqw', 
-    'Candidate View', 
-    value2,
+    ad_sheet_id, 
+    MASTER_SCHEMA_SHEET_ID, 
+    value,
     value_input_option: 'RAW',
   )
 end

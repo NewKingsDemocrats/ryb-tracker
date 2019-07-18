@@ -1,15 +1,41 @@
 #!/usr/bin/env ruby
 require 'json'
+require 'set'
+require 'pry'
 require 'googleauth'
 require 'google/apis/sheets_v4'
-require 'pry'
 
 ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
-ENV_VARS_PAGE_ID = 'district to spreadsheet ID'
+DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
+MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 
-def validate_spreadsheet_sheets_and_columns
-
+def validate_spreadsheets_columns
+  if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
+    error_message = "The following spreadsheets had errors:\n"
+    invalid_speadsheets_columns.each do |invalid_spreadsheet|
+      ad,
+      spreadsheet_id,
+      missing_columns,
+      superfluous_columns = invalid_spreadsheet.values_at(
+        :assembly_district,
+        :spreadsheet_id,
+        :missing_columns,
+        :superfluous_columns,
+      )
+      error_message = add_errors_to_message(
+        error_message,
+        ad,
+        spreadsheet_id,
+        missing_columns,
+        superfluous_columns,
+      )
+    end
+    puts error_message
+    raise "Check spreadsheet schemas."
+  else
+    true
+  end
 end
 
 def service
@@ -68,11 +94,75 @@ def append_sheet(value)
   )
 end
 
-# def get_spreadsheet_info(spreadsheet_id)
-#   ss_info = service.get_spreadsheet(spreadsheet_id)
-#   binding.pry
-# end
+def sheet_columns(spreadsheet_id, page_id)
+  service.get_spreadsheet_values(
+    spreadsheet_id,
+    page_id + '!1:1',
+  ).values
+end
 
-# get_spreadsheet_info(ARGV[0])
+def invalid_speadsheets_columns
+  assembly_district_sheets = read_sheet(
+    ENV_VARS_SPREADSHEET_ID,
+    DISTRICT_TO_SPREADSHEET_ID,
+  )
+  master_schema_columns = sheet_columns(
+    MASTER_SCHEMA_SPREADSHEET_ID,
+    MASTER_SCHEMA_SHEET_ID,
+  )
+  assembly_district_sheets.reduce([]) do |arr, ad_sheet|
+    ad_sheet_columns = sheet_columns(
+      ad_sheet['spreadsheet_id'],
+      MASTER_SCHEMA_SHEET_ID,
+    )
+    unless ad_sheet_columns == master_schema_columns
+      arr << {
+        assembly_district: ad_sheet['assembly_district'],
+        spreadsheet_id: ad_sheet['spreadsheet_id'],
+        missing_columns: missing_columns(
+          master_schema_columns,
+          ad_sheet_columns,
+        ),
+        superfluous_columns: superfluous_columns(
+          master_schema_columns,
+          ad_sheet_columns,
+        ),
+      }
+    end
+    arr
+  end
+end
 
-puts read_sheet(ARGV[0], ARGV[1])
+def missing_columns(schema_columns, ad_sheet_columns)
+  (Set.new(*schema_columns) - Set.new(*ad_sheet_columns)).to_a
+end
+
+def superfluous_columns(schema_columns, ad_sheet_columns)
+  (Set.new(*ad_sheet_columns) - Set.new(*schema_columns)).to_a
+end
+
+def add_errors_to_message(
+  error_message,
+  ad,
+  spreadsheet_id,
+  missing_columns,
+  superfluous_columns
+)
+  ad_message = "\tAD #{ad} (spreadsheet ID: #{spreadsheet_id}) "
+  if missing_columns && missing_columns.length > 0
+    ad_message += "is missing the following columns:\n\t\t" +
+      missing_columns.join("\n\t\t")
+    if superfluous_columns && superfluous_columns.length > 0
+      ad_message += "\n\tand "
+    end
+  end
+  if superfluous_columns && superfluous_columns.length > 0
+    ad_message += "has the following superfluous columns:\n\t\t" +
+      superfluous_columns.join("\n\t\t")
+  end
+  error_message += ad_message + "\n"
+end
+
+validate_spreadsheets_columns
+
+# puts read_sheet(ARGV[0], ARGV[1])

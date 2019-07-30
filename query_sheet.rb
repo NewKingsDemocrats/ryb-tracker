@@ -9,6 +9,8 @@ ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
+NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
+NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 
 def validate_spreadsheets_columns
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -71,34 +73,46 @@ def read_sheet(spreadsheet_id, range)
     range,
   ).values
 
-  test_append_sheet(values[2])
+  keys = values.first
 
-#  keys = values.first
-#
-#  values[1..-1].map do |row|
-#    row.each_with_index.reduce({}) do |obj, (value, index)|
-#      obj[keys[index]] = value
-#      obj
-#    end
-#  end
+  values[1..-1].map do |row|
+    row.each_with_index.reduce({}) do |obj, (value, index)|
+      obj[keys[index]] = value
+      obj
+    end
+  end
 end
 
-def test_append_sheet(value)
-  puts 'Testing append sheet'
+def get_ad_sheet_id(ad)
+  assembly_district_sheets = read_sheet(
+    ENV_VARS_SPREADSHEET_ID,
+    DISTRICT_TO_SPREADSHEET_ID,
+  )	
+  assembly_district_sheets.find{|row| row['assembly_district'] == ad.to_s}['spreadsheet_id']
+end
+
+# Call this to verify that appending to a sheet works.
+def test_append_sheet()
+  values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID) 
   ad = 56
-  append_user_to_ad_sheet(ad, value)
+  append_user_to_ad_sheet(ad, values[0])
 end
 
 def append_user_to_ad_sheet(ad, user)
-  # TODO(turnbull): Get the correct sheet ID from the ad.
-  ad_sheet_id = '1GMjgr9iws3mkuCM5Le7TQOEbjnB5d0DVMPDMbRcOEqw'
-  # TODO(turnbull): Turn the user object into the formatted value for the new sheet.
-  value = Google::Apis::SheetsV4::ValueRange.new(values: [user])
+  user_for_ad_sheet = [
+    [user['first_name'] + ' ' + user['last_name'], 
+     user['nationbuilder_id'], 
+     user['primary_address1'], # Perhaps replace with formatted address.
+     user['phone_number'].empty? ? user['mobile_empty'] : user['phone_number'],
+     user['email'],
+     user['state_lower_district'],  # AD - perhaps replace with CC Sunlight's value.
+    ]
+  ]
 
   service.append_spreadsheet_value(
-    ad_sheet_id, 
+    get_ad_sheet_id(ad), 
     MASTER_SCHEMA_SHEET_ID, 
-    value,
+    Google::Apis::SheetsV4::ValueRange.new(values: user_for_ad_sheet),
     value_input_option: 'RAW',
   )
 end
@@ -173,5 +187,4 @@ def add_errors_to_message(
 end
 
 validate_spreadsheets_columns
-
 # puts read_sheet(ARGV[0], ARGV[1])

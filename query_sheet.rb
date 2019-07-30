@@ -68,6 +68,7 @@ def authorize_service
 end
 
 def read_sheet(spreadsheet_id, range)
+  puts spreadsheet_id
   values = service.get_spreadsheet_values(
     spreadsheet_id,
     range,
@@ -186,5 +187,32 @@ def add_errors_to_message(
   error_message += ad_message + "\n"
 end
 
+def process_export_from_nb 
+  puts 'Processing export'
+  export_values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
+  # binding.pry
+  # This next line outputs each id. Not what we want.
+  # values.each { |user| puts user['nationbuilder_id']}
+
+  # Load all users from each sheet into a hashtable for quick lookup.
+  hash = Hash.new
+  assembly_district_sheets = read_sheet(
+    ENV_VARS_SPREADSHEET_ID,
+    DISTRICT_TO_SPREADSHEET_ID,
+  )
+  assembly_district_sheets.each{ |admapping| 
+    ad_values = read_sheet(
+      admapping['assembly_district'],
+      MASTER_SCHEMA_SHEET_ID,
+    )
+    ad_values.each{ |user|
+      hash[user['nationbuilder_id']] = admapping['assembly_district']
+    }
+  }
+  puts hash
+
+end
+
 validate_spreadsheets_columns
+process_export_from_nb
 # puts read_sheet(ARGV[0], ARGV[1])

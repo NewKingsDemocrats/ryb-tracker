@@ -276,6 +276,14 @@ def map_address_ad_and_ed_to_candidates(candidates)
   end
 end
 
+def nb_and_cc_ad_match?(candidiate)
+  candidate['state_lower_district'] == candidate['ad']
+end
+
+def ad_match?(candidiate, new_candidate)
+  candidate['ad'] == new_candidate['ad']
+end
+
 # spreadsheets_columns_valid?
 
 # find_diffs(

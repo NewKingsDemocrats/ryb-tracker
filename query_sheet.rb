@@ -13,16 +13,6 @@ MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 
-# def update_district_spreadsheets
-#   begin
-#     if spreadsheets_columns_valid?
-#       binding.pry
-#     end
-#   rescue => e
-#     puts e
-#   end
-# end
-
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
     error_message = "The following spreadsheets had errors:\n"
@@ -222,21 +212,6 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
   end
 end
 
-def find_diffs(imported_candidates)
-  imported_candidates_by_nationbuilder_id = candidates_by_attribute(
-    imported_candidates,
-    'nationbuilder_id',
-  )
-  sheets_data = assembly_district_sheets.reduce({}) do |obj, ad_sheet|
-    obj[ad_sheet['assembly_district']] = candidates_by_attribute(
-      read_sheet(ad_sheet['spreadsheet_id'], 'Candidate View'),
-      'Email',
-    )
-    obj
-  end
-  binding.pry
-end
-
 def column_to_letter(num)
   char = (num % 26 + 65).chr
   remainder = num/26
@@ -262,19 +237,7 @@ def get_ad_and_ed_from_cc_sunlight(address)
 end
 
 def format_address(candidate)
-  unless candidate['primary_address1'] &&
-    candidate['primary_address1'].length > 0 &&
-    candidate['primary_city'] &&
-    candidate['primary_city'].length > 0 &&
-    candidate['primary_city'].match(/brooklyn|new york/i) &&
-    candidate['primary_state'] &&
-    candidate['primary_state'].length > 0 &&
-    candidate['primary_state'].match(/ny/i) &&
-    candidate['primary_zip'] &&
-    candidate['primary_zip'].length > 0 &&
-    candidate['primary_zip'].length == 5
-      return nil
-  end
+  return nil unless candidate_address_valid?(candidate)
   "#{
     titleize(candidate['primary_address1'])
   }#{
@@ -290,6 +253,21 @@ def format_address(candidate)
   } #{
     candidate['primary_zip']
   }"
+end
+
+def candidate_address_valid?(candidate)
+  # TODO: dump candidiate into spreadsheet of rejects if address invalid
+  candidate['primary_address1'] &&
+    candidate['primary_address1'].length > 0 &&
+    candidate['primary_city'] &&
+    candidate['primary_city'].length > 0 &&
+    candidate['primary_city'].match(/brooklyn|new york/i) &&
+    candidate['primary_state'] &&
+    candidate['primary_state'].length > 0 &&
+    candidate['primary_state'].match(/ny/i) &&
+    candidate['primary_zip'] &&
+    candidate['primary_zip'].length > 0 &&
+    candidate['primary_zip'].length == 5
 end
 
 def titleize(str)
@@ -319,15 +297,3 @@ end
 def ad_match?(candidiate, new_candidate)
   candidate['ad'] == new_candidate['ad']
 end
-
-# spreadsheets_columns_valid?
-
-# find_diffs(
-#   read_sheet(
-#     '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s',
-#     'nationbuilder-people-export-2019-07-09-2131',
-#   )
-# )
-validate_spreadsheets_columns
-
-binding.pry

@@ -8,8 +8,10 @@ gem install google-api-client
 gem install pry
 ```
 
+Create `googleCreds.json` with the credentials.
+
 Then run the script:
 
 ```
-ruby query_sheet.rb '$SHEETID' '$TABNAME'
+ruby query_sheet.rb
 ```

@@ -68,7 +68,6 @@ def authorize_service
 end
 
 def read_sheet(spreadsheet_id, range)
-  puts spreadsheet_id
   values = service.get_spreadsheet_values(
     spreadsheet_id,
     range,

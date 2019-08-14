@@ -13,15 +13,15 @@ MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 
-def update_district_spreadsheets
-  begin
-    if spreadsheets_columns_valid?
-      binding.pry
-    end
-  rescue => e
-    puts e
-  end
-end
+# def update_district_spreadsheets
+#   begin
+#     if spreadsheets_columns_valid?
+#       binding.pry
+#     end
+#   rescue => e
+#     puts e
+#   end
+# end
 
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -329,6 +329,5 @@ end
 #   )
 # )
 validate_spreadsheets_columns
-# puts read_sheet(ARGV[0], ARGV[1])
 
 binding.pry

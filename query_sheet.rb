@@ -212,6 +212,40 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
   end
 end
 
+# Code that runs over the exported data from NationBuilder, does validation, and adds new users to the appropriate AD sheet.
+def process_export_from_nb 
+  assembly_district_sheets = read_sheet(
+    ENV_VARS_SPREADSHEET_ID,
+    DISTRICT_TO_SPREADSHEET_ID,
+  )
+  # Load all users from each sheet into an object for quick lookup.
+  existing_candidates = candidates_by_attribute(  
+    assembly_district_sheets.map{ |admapping|
+      read_sheet(
+        admapping['spreadsheet_id'],
+        MASTER_SCHEMA_SHEET_ID,
+      )
+    }.flatten, 
+    'RYBID',
+  )
+
+  # Get all candidates from the export.
+  export_values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
+  export_candidates = candidates_by_attribute(export_values, 'nationbuilder_id')
+  export_candidates.each { |id, candidate|
+    # See if user already exists
+    if (existing_candidates[id]) 
+      puts 'user exists'
+      # TODO: Check if they're in the correct AD.
+    else 
+      puts 'new user'
+      # TODO: Data validation
+      # TODO: Append to correct AD sheet
+    end
+  }
+
+end
+
 def column_to_letter(num)
   char = (num % 26 + 65).chr
   remainder = num/26

@@ -12,6 +12,10 @@ MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
+INVALID_ADDRESSES_SPREADSHEET_ID = '1VA3grnHcGwtzGTghzFO7VkREgIigAM_csL1oJwF_ln8'
+INVALID_ADDRESSES_SHEET_ID = 'Candidate View'
+INVALID_ADS_OR_EDS_SPREADSHEET_ID = '1pMLrVtQiN_rQeE-C82o7veIbFNLakQ2ynj6Cz4a3QAo'
+INVALID_ADS_OR_EDS_SHEET_ID = 'Candidate View'
 
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -100,33 +104,50 @@ def get_ad_sheet_id(ad)
     ENV_VARS_SPREADSHEET_ID,
     DISTRICT_TO_SPREADSHEET_ID,
   )
-  assembly_district_sheets.find{|row| row['assembly_district'] == ad.to_s}['spreadsheet_id']
+  assembly_district_sheets.find do |row|
+    row['assembly_district'] == ad.to_s
+  end['spreadsheet_id']
 end
 
 # Call this to verify that appending to a sheet works.
 def test_append_sheet()
   values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
   ad = 56
-  append_user_to_ad_sheet(ad, values[0])
+  append_candidate_to_ad_sheet(ad, values[0])
 end
 
-def append_user_to_ad_sheet(ad, user)
-  user_for_ad_sheet = [
-    [user['first_name'] + ' ' + user['last_name'],
-     user['nationbuilder_id'],
-     user['primary_address1'], # Perhaps replace with formatted address.
-     user['phone_number'].empty? ? user['mobile_empty'] : user['phone_number'],
-     user['email'],
-     user['state_lower_district'],  # AD - perhaps replace with CC Sunlight's value.
-    ]
-  ]
+def append_candidate_to_ad_sheet(ad, candidate)
+  append_candidate_to_sheet(candidate, get_ad_sheet_id(ad))
+end
 
+def append_candidate_to_sheet(
+  candidate,
+  spreadsheet_id,
+  range=MASTER_SCHEMA_SHEET_ID
+)
   service.append_spreadsheet_value(
-    get_ad_sheet_id(ad),
-    MASTER_SCHEMA_SHEET_ID,
-    Google::Apis::SheetsV4::ValueRange.new(values: user_for_ad_sheet),
+    spreadsheet_id,
+    range,
+    Google::Apis::SheetsV4::ValueRange.new(
+      values: candidate_for_ad_sheet(candidate)
+    ),
     value_input_option: 'RAW',
   )
+end
+
+def candidate_for_ad_sheet(candidate)
+  [
+    [
+      "#{candidate['first_name']} #{candidate['last_name']}",
+      candidate['nationbuilder_id'],
+      candidate['primary_address1'], # Perhaps replace with formatted address.
+      candidate['phone_number'].empty? ?
+        candidate['mobile_empty'] :
+        candidate['phone_number'],
+      candidate['email'],
+      candidate['state_lower_district'],  # AD - perhaps replace with CC Sunlight's value.
+    ]
+  ]
 end
 
 def sheet_columns(spreadsheet_id, page_id)
@@ -213,13 +234,13 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
   end
 end
 
-# Code that runs over the exported data from NationBuilder, does validation, and adds new users to the appropriate AD sheet.
+# Code that runs over the exported data from NationBuilder, does validation, and adds new candidates to the appropriate AD sheet.
 def process_export_from_nb
   assembly_district_sheets = read_sheet(
     ENV_VARS_SPREADSHEET_ID,
     DISTRICT_TO_SPREADSHEET_ID,
   )
-  # Load all users from each sheet into an object for quick lookup.
+  # Load all candidates from each sheet into an object for quick lookup.
   existing_candidates = candidates_by_attribute(
     assembly_district_sheets.map{ |admapping|
       read_sheet(
@@ -234,12 +255,12 @@ def process_export_from_nb
   export_values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
   export_candidates = candidates_by_attribute(export_values, 'nationbuilder_id')
   export_candidates.each { |id, candidate|
-    # See if user already exists
+    # See if candidate already exists
     if (existing_candidates[id])
-      puts 'user exists'
+      puts 'candidate exists'
       # TODO: Check if they're in the correct AD.
     else
-      puts 'new user'
+      puts 'new candidate'
       # TODO: Data validation
       # TODO: Append to correct AD sheet
     end
@@ -291,7 +312,6 @@ def format_address(candidate)
 end
 
 def candidate_address_valid?(candidate)
-  # TODO: dump candidiate into spreadsheet of rejects if address invalid
   candidate['primary_address1'] &&
     candidate['primary_address1'].length > 0 &&
     candidate['primary_city'] &&
@@ -315,13 +335,28 @@ end
 def map_address_ad_and_ed_to_candidates(candidates)
   candidates.map do |candidate|
     candidate['address'] = format_address(candidate)
+    candidate
+  end.select do |candidate|
     if candidate['address']
       puts candidate['address']
-      candidate['ad'], candidate['ed'] =
-        get_ad_and_ed_from_cc_sunlight(candidate['address'])
-          .values_at(:ad, :ed)
+      true
+    else
+      append_candidate_to_sheet(candidate, INVALID_ADDRESSES_SPREADSHEET_ID)
+      false
     end
+  end.map do |candidate|
+    candidate['ad'], candidate['ed'] =
+      get_ad_and_ed_from_cc_sunlight(candidate['address'])
+        .values_at(:ad, :ed)
     candidate
+  end.select do |candidate|
+    if candidate['ad'] && candidate['ed']
+      puts "AD: #{candidate['ad']}, ED: #{candidate['ed']}"
+      true
+    else
+      append_candidate_to_sheet(candidate, INVALID_ADS_OR_EDS_SPREADSHEET_ID)
+      false
+    end
   end
 end
 

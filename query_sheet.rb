@@ -36,6 +36,7 @@ def spreadsheets_columns_valid?
     end
     puts error_message
     raise "Check spreadsheet schemas."
+    false
   else
     true
   end
@@ -52,7 +53,7 @@ def service
 end
 
 def drive_service
-  @service ||= begin
+  @drive_service ||= begin
     s = Google::Apis::DriveV3::DriveService.new
     s.authorization = authorize_service
     s
@@ -73,7 +74,7 @@ def authorize_service
   end
 
   authorizer = Google::Auth::ServiceAccountCredentials
-    .make_creds(scope: Google::Apis::SheetsV4::AUTH_SPREADSHEETS)
+    .make_creds(scope: Google::Apis::SheetsV4::AUTH_DRIVE)
   authorizer.fetch_access_token!
   authorizer
 end
@@ -213,19 +214,19 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
 end
 
 # Code that runs over the exported data from NationBuilder, does validation, and adds new users to the appropriate AD sheet.
-def process_export_from_nb 
+def process_export_from_nb
   assembly_district_sheets = read_sheet(
     ENV_VARS_SPREADSHEET_ID,
     DISTRICT_TO_SPREADSHEET_ID,
   )
   # Load all users from each sheet into an object for quick lookup.
-  existing_candidates = candidates_by_attribute(  
+  existing_candidates = candidates_by_attribute(
     assembly_district_sheets.map{ |admapping|
       read_sheet(
         admapping['spreadsheet_id'],
         MASTER_SCHEMA_SHEET_ID,
       )
-    }.flatten, 
+    }.flatten,
     'RYBID',
   )
 
@@ -234,10 +235,10 @@ def process_export_from_nb
   export_candidates = candidates_by_attribute(export_values, 'nationbuilder_id')
   export_candidates.each { |id, candidate|
     # See if user already exists
-    if (existing_candidates[id]) 
+    if (existing_candidates[id])
       puts 'user exists'
       # TODO: Check if they're in the correct AD.
-    else 
+    else
       puts 'new user'
       # TODO: Data validation
       # TODO: Append to correct AD sheet
@@ -331,3 +332,25 @@ end
 def ad_match?(candidiate, new_candidate)
   candidate['ad'] == new_candidate['ad']
 end
+
+def create_new_ad_spreadsheet(ad)
+  new_ad_spreadsheet = drive_service.copy_file(
+    '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0',
+    Google::Apis::DriveV3::File.new({
+      name: "AD #{ad}",
+      parents: ['16NtRayVsCalmmhsOurTBA_BXFwejbV25'],
+    }),
+  )
+  service.append_spreadsheet_value(
+    ENV_VARS_SPREADSHEET_ID,
+    DISTRICT_TO_SPREADSHEET_ID,
+    Google::Apis::SheetsV4::ValueRange.new(
+      values: [[ad, new_ad_spreadsheet.id]]
+    ),
+    value_input_option: 'RAW',
+  )
+end
+
+binding.pry
+
+# puts "the spreadsheet schemas are #{spreadsheets_columns_valid? ? '' : 'not '}valid"

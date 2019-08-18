@@ -11,11 +11,10 @@ DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
+# NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
-INVALID_ADDRESSES_SPREADSHEET_ID = '1VA3grnHcGwtzGTghzFO7VkREgIigAM_csL1oJwF_ln8'
-INVALID_ADDRESSES_SHEET_ID = 'Candidate View'
-INVALID_ADS_OR_EDS_SPREADSHEET_ID = '1pMLrVtQiN_rQeE-C82o7veIbFNLakQ2ynj6Cz4a3QAo'
-INVALID_ADS_OR_EDS_SHEET_ID = 'Candidate View'
+INVALID_ADDRESSES_SPREADSHEET_ID = '1oh5Zxl4OpgjxQZs3gKLJ4u6IXRVJo20ocXldf2KBGDw'
+INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
 
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -117,20 +116,35 @@ def test_append_sheet()
 end
 
 def append_candidate_to_ad_sheet(ad, candidate)
-  append_candidate_to_sheet(candidate, get_ad_sheet_id(ad))
+  append_candidate_to_spreadsheet(candidate, get_ad_sheet_id(ad))
 end
 
-def append_candidate_to_sheet(
+def append_candidate_to_spreadsheet(
   candidate,
+  spreadsheet_id,
+  range=MASTER_SCHEMA_SHEET_ID,
+  error_sheet=false
+)
+  service.append_spreadsheet_value(
+    spreadsheet_id,
+    range,
+    Google::Apis::SheetsV4::ValueRange.new(
+      values:
+        error_sheet ? [ candidate.values ] : candidate_for_ad_sheet(candidate),
+    ),
+    value_input_option: 'RAW',
+  )
+end
+
+def append_candidates_to_spreadsheet(
+  candidiates,
   spreadsheet_id,
   range=MASTER_SCHEMA_SHEET_ID
 )
   service.append_spreadsheet_value(
     spreadsheet_id,
     range,
-    Google::Apis::SheetsV4::ValueRange.new(
-      values: candidate_for_ad_sheet(candidate)
-    ),
+    Google::Apis::SheetsV4::ValueRange.new(values: candidiates),
     value_input_option: 'RAW',
   )
 end
@@ -140,14 +154,21 @@ def candidate_for_ad_sheet(candidate)
     [
       "#{candidate['first_name']} #{candidate['last_name']}",
       candidate['nationbuilder_id'],
-      candidate['primary_address1'], # Perhaps replace with formatted address.
-      candidate['phone_number'].empty? ?
-        candidate['mobile_empty'] :
-        candidate['phone_number'],
+      format_address(candidate), # Perhaps replace with formatted address.
+      format_phone_number(candidate),
       candidate['email'],
-      candidate['state_lower_district'],  # AD - perhaps replace with CC Sunlight's value.
+      candidate['ad'],  # AD - perhaps replace with CC Sunlight's value.
+      candidate['ed'],
     ]
   ]
+end
+
+def format_phone_number(candidate)
+  unless candidate['phone_number'].empty?
+    candidate['phone_number']
+  else
+    candidate['mobile_number']
+  end
 end
 
 def sheet_columns(spreadsheet_id, page_id)
@@ -253,8 +274,13 @@ def process_export_from_nb
 
   # Get all candidates from the export.
   export_values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
-  export_candidates = candidates_by_attribute(export_values, 'nationbuilder_id')
-  export_candidates.each { |id, candidate|
+  raw_export_candidates = candidates_by_attribute(
+    export_values,
+    'nationbuilder_id',
+  )
+  export_candidates = formatted_candidates_to_import(raw_export_candidates)
+  binding.pry
+  export_candidates_with_ads.each { |id, candidate|
     # See if candidate already exists
     if (existing_candidates[id])
       puts 'candidate exists'
@@ -265,6 +291,9 @@ def process_export_from_nb
       # TODO: Append to correct AD sheet
     end
   }
+end
+
+def basic_info_changed?(candidate_nb_id, existing_candidate, export_candidate)
 
 end
 
@@ -307,7 +336,7 @@ def format_address(candidate)
   }, #{
     candidate['primary_state'].upcase
   } #{
-    candidate['primary_zip']
+    candidate['primary_zip'].match(/\d{5}/).to_s
   }"
 end
 
@@ -322,7 +351,7 @@ def candidate_address_valid?(candidate)
     candidate['primary_state'].match(/ny/i) &&
     candidate['primary_zip'] &&
     candidate['primary_zip'].length > 0 &&
-    candidate['primary_zip'].length == 5
+    candidate['primary_zip'].match(/\d{5}/)
 end
 
 def titleize(str)
@@ -332,32 +361,45 @@ def titleize(str)
     .join(' ')
 end
 
-def map_address_ad_and_ed_to_candidates(candidates)
-  candidates.map do |candidate|
-    candidate['address'] = format_address(candidate)
-    candidate
-  end.select do |candidate|
-    if candidate['address']
-      puts candidate['address']
-      true
-    else
-      append_candidate_to_sheet(candidate, INVALID_ADDRESSES_SPREADSHEET_ID)
-      false
+def formatted_candidates_to_import(export_candidates)
+  candidiates_with_invalid_addresses = []
+  formatted_candidates =
+    export_candidates.reduce({}) do |cands_to_imp, (id, export_candidate)|
+      formatted_attributes = {}
+      formatted_attributes['Address'] = format_address(export_candidate)
+      unless formatted_attributes['Address']
+        candidiates_with_invalid_addresses << export_candidate.values
+        next cands_to_imp
+      end
+      puts formatted_attributes['Address']
+      formatted_attributes['AD'], formatted_attributes['ED'] =
+        get_ad_and_ed_from_cc_sunlight(formatted_attributes['Address'])
+          .values_at(:ad, :ed)
+      puts "AD: #{
+        formatted_attributes['AD']
+      }, ED: #{
+        formatted_attributes['ED']
+      }"
+      cands_to_imp[id] = {
+        'Name' => "#{
+          export_candidate['first_name']
+        } #{
+          export_candidate['last_name']
+        }",
+        'RYBID' => export_candidate['nationbuilder_id'],
+        'Phone' => format_phone_number(export_candidate),
+        'Email' => export_candidate['email'],
+      }.merge(formatted_attributes)
+      cands_to_imp
     end
-  end.map do |candidate|
-    candidate['ad'], candidate['ed'] =
-      get_ad_and_ed_from_cc_sunlight(candidate['address'])
-        .values_at(:ad, :ed)
-    candidate
-  end.select do |candidate|
-    if candidate['ad'] && candidate['ed']
-      puts "AD: #{candidate['ad']}, ED: #{candidate['ed']}"
-      true
-    else
-      append_candidate_to_sheet(candidate, INVALID_ADS_OR_EDS_SPREADSHEET_ID)
-      false
-    end
+  if candidiates_with_invalid_addresses.length > 0
+    append_candidates_to_spreadsheet(
+      candidiates_with_invalid_addresses,
+      INVALID_ADDRESSES_SPREADSHEET_ID,
+      NB_EXPORT_SHEET_ID,
+    )
   end
+  formatted_candidates
 end
 
 def nb_and_cc_ad_match?(candidiate)
@@ -384,8 +426,10 @@ def create_new_ad_spreadsheet(ad)
     ),
     value_input_option: 'RAW',
   )
+  new_ad_spreadsheet
 end
 
-binding.pry
+process_export_from_nb
+# binding.pry
 
 # puts "the spreadsheet schemas are #{spreadsheets_columns_valid? ? '' : 'not '}valid"

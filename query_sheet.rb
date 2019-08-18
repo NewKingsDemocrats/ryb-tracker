@@ -10,11 +10,13 @@ ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
-NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
-# NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
+# NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
+NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 INVALID_ADDRESSES_SPREADSHEET_ID = '1oh5Zxl4OpgjxQZs3gKLJ4u6IXRVJo20ocXldf2KBGDw'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
+UPDATED_CANDIDATES_SPREADSHEET_ID = '1GgRV5mOZPzA9tTPDKx90ejvkXbTyTM8HaF8OWI3JmV4'
+MOVED_CANDIDATES_SPREADSHEET_ID = '1tX0vGXrgXSXl3JBifoWfdeFpFfkrnNLy22GZeOTamjw'
 
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -98,26 +100,26 @@ def read_sheet(spreadsheet_id, range)
   end
 end
 
-def get_ad_sheet_id(ad)
-  assembly_district_sheets = read_sheet(
-    ENV_VARS_SPREADSHEET_ID,
-    DISTRICT_TO_SPREADSHEET_ID,
-  )
-  assembly_district_sheets.find do |row|
-    row['assembly_district'] == ad.to_s
-  end['spreadsheet_id']
-end
-
-# Call this to verify that appending to a sheet works.
-def test_append_sheet()
-  values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
-  ad = 56
-  append_candidate_to_ad_sheet(ad, values[0])
-end
-
-def append_candidate_to_ad_sheet(ad, candidate)
-  append_candidate_to_spreadsheet(candidate, get_ad_sheet_id(ad))
-end
+# def get_ad_sheet_id(ad)
+#   assembly_district_sheets = read_sheet(
+#     ENV_VARS_SPREADSHEET_ID,
+#     DISTRICT_TO_SPREADSHEET_ID,
+#   )
+#   assembly_district_sheets.find do |row|
+#     row['assembly_district'] == ad.to_s
+#   end['spreadsheet_id']
+# end
+#
+# # Call this to verify that appending to a sheet works.
+# def test_append_sheet()
+#   values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
+#   ad = 56
+#   append_candidate_to_ad_sheet(ad, values[0])
+# end
+#
+# def append_candidate_to_ad_sheet(ad, candidate)
+#   append_candidate_to_spreadsheet(candidate, get_ad_sheet_id(ad))
+# end
 
 def append_candidate_to_spreadsheet(
   candidate,
@@ -207,8 +209,13 @@ def invalid_speadsheets_columns
 end
 
 def assembly_district_sheets
-  @assembly_district_sheets ||=
-    read_sheet(ENV_VARS_SPREADSHEET_ID, DISTRICT_TO_SPREADSHEET_ID)
+  unless @ad_spreadsheets_cache_valid
+    @assembly_district_sheets =
+      read_sheet(ENV_VARS_SPREADSHEET_ID, DISTRICT_TO_SPREADSHEET_ID)
+    @ad_spreadsheets_cache_valid = true
+    @assembly_district_sheets
+  end
+  @assembly_district_sheets
 end
 
 def missing_columns(schema_columns, ad_sheet_columns)
@@ -257,10 +264,6 @@ end
 
 # Code that runs over the exported data from NationBuilder, does validation, and adds new candidates to the appropriate AD sheet.
 def process_export_from_nb
-  assembly_district_sheets = read_sheet(
-    ENV_VARS_SPREADSHEET_ID,
-    DISTRICT_TO_SPREADSHEET_ID,
-  )
   # Load all candidates from each sheet into an object for quick lookup.
   existing_candidates = candidates_by_attribute(
     assembly_district_sheets.map{ |admapping|
@@ -279,22 +282,73 @@ def process_export_from_nb
     'nationbuilder_id',
   )
   export_candidates = formatted_candidates_to_import(raw_export_candidates)
-  binding.pry
-  export_candidates_with_ads.each { |id, candidate|
+  changed_candidates = []
+  moved_candidates = []
+  ad_spreadsheet_columns = sheet_columns(
+    MASTER_SCHEMA_SPREADSHEET_ID,
+    MASTER_SCHEMA_SHEET_ID,
+  )[0]
+  candidiates_to_append = {}
+  export_candidates.each do |id, export_candidate|
     # See if candidate already exists
     if (existing_candidates[id])
       puts 'candidate exists'
-      # TODO: Check if they're in the correct AD.
+      unless ads_match?(existing_candidates[id], export_candidate)
+        moved_candidates <<
+          export_candidate.values_at(*ad_spreadsheet_columns).compact
+      end
+      if basic_info_changed?(existing_candidates[id], export_candidate)
+        changed_candidates <<
+          export_candidate.values_at(*ad_spreadsheet_columns).compact
+      end
     else
       puts 'new candidate'
-      # TODO: Data validation
-      # TODO: Append to correct AD sheet
+      export_candidate_ad = export_candidate['AD']
+      if assembly_district_sheets.find do |sheet|
+        sheet['assembly_district'] == export_candidate_ad
+      end
+        if candidiates_to_append[export_candidate_ad]
+          candidiates_to_append[export_candidate_ad] <<
+            export_candidate.values_at(*ad_spreadsheet_columns).compact
+        else
+          candidiates_to_append[export_candidate_ad] =
+            [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+        end
+      else
+        create_new_ad_spreadsheet(export_candidate_ad)
+        candidiates_to_append[export_candidate_ad] =
+          [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+      end
     end
-  }
+  end
+  append_candidates_to_spreadsheet(
+    changed_candidates,
+    UPDATED_CANDIDATES_SPREADSHEET_ID,
+  )
+  append_candidates_to_spreadsheet(
+    moved_candidates,
+    MOVED_CANDIDATES_SPREADSHEET_ID,
+  )
+  candidiates_to_append.each do |ad, candidates|
+    append_candidates_to_spreadsheet(
+      candidates,
+      assembly_district_sheets.find do |sheet|
+        sheet['assembly_district'] == ad
+      end['spreadsheet_id'],
+    )
+  end
 end
 
-def basic_info_changed?(candidate_nb_id, existing_candidate, export_candidate)
+# def move_candidate_between_ads(candidate, current_ad, new_ad)
+#
+# end
 
+def ads_match?(existing_candidiate, export_candidate)
+  existing_candidiate['AD'].to_s == export_candidate['AD'].to_s
+end
+
+def basic_info_changed?(existing_candidate, export_candidate)
+  !existing_candidate.merge(export_candidate) == existing_candidate
 end
 
 def column_to_letter(num)
@@ -316,8 +370,8 @@ def get_ad_and_ed_from_cc_sunlight(address)
   end
   ad, ed = JSON.parse(response.body).values_at('ad', 'ed')
   {
-    ad: ad,
-    ed: ed,
+    ad: ad.to_s,
+    ed: ed.to_s,
   }
 end
 
@@ -402,10 +456,6 @@ def formatted_candidates_to_import(export_candidates)
   formatted_candidates
 end
 
-def nb_and_cc_ad_match?(candidiate)
-  candidate['state_lower_district'] == candidate['ad']
-end
-
 def ad_match?(candidiate, new_candidate)
   candidate['ad'] == new_candidate['ad']
 end
@@ -426,6 +476,7 @@ def create_new_ad_spreadsheet(ad)
     ),
     value_input_option: 'RAW',
   )
+  @ad_spreadsheets_cache_valid = false
   new_ad_spreadsheet
 end
 

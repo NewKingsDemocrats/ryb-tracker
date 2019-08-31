@@ -264,8 +264,40 @@ end
 
 # Code that runs over the exported data from NationBuilder, does validation, and adds new candidates to the appropriate AD sheet.
 def process_export_from_nb
+  # Get all candidates from the export.
+  changed_candidates = []
+  moved_candidates = []
+  candidiates_to_append = {}
+  export_candidates.each do |id, export_candidate|
+    # See if candidate already exists
+    if (existing_candidates[id])
+      process_existing_candidate(
+        existing_candidates[id],
+        export_candidate,
+        moved_candidates,
+        changed_candidates,
+      )
+    else
+      process_new_candidate(export_candidate, candidiates_to_append)
+    end
+  end
+  add_candidates_to_spreadsheets(
+    changed_candidates,
+    moved_candidates,
+    candidiates_to_append
+  )
+  puts "#{
+    changed_candidates.count
+  } changed candidates, #{
+    moved_candidates.count
+  } moved candidates, and #{
+    candidiates_to_append.count
+  } new candidates processed."
+end
+
+def existing_candidates
   # Load all candidates from each sheet into an object for quick lookup.
-  existing_candidates = candidates_by_attribute(
+  candidates_by_attribute(
     assembly_district_sheets.map{ |admapping|
       read_sheet(
         admapping['spreadsheet_id'],
@@ -274,53 +306,66 @@ def process_export_from_nb
     }.flatten,
     'RYBID',
   )
+end
 
-  # Get all candidates from the export.
-  export_values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
-  raw_export_candidates = candidates_by_attribute(
-    export_values,
-    'nationbuilder_id',
+def export_candidates
+  formatted_candidates_to_import(
+    candidates_by_attribute(
+      read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID),
+      'nationbuilder_id',
+    )
   )
-  export_candidates = formatted_candidates_to_import(raw_export_candidates)
-  changed_candidates = []
-  moved_candidates = []
-  ad_spreadsheet_columns = sheet_columns(
+end
+
+def process_existing_candidate(
+  existing_candidate,
+  export_candidate,
+  moved_candidates,
+  changed_candidates
+)
+  puts 'candidate exists'
+  unless ads_match?(existing_candidate, export_candidate)
+    moved_candidates <<
+      export_candidate.values_at(*ad_spreadsheet_columns).compact
+  end
+  if basic_info_changed?(existing_candidate, export_candidate)
+    changed_candidates <<
+      export_candidate.values_at(*ad_spreadsheet_columns).compact
+  end
+end
+
+def process_new_candidate(export_candidate, candidiates_to_append)
+  puts 'new candidate'
+  export_candidate_ad = export_candidate['AD']
+  if assembly_district_sheets.find do |sheet|
+    sheet['assembly_district'] == export_candidate_ad
+  end
+    if candidiates_to_append[export_candidate_ad]
+      candidiates_to_append[export_candidate_ad] <<
+        export_candidate.values_at(*ad_spreadsheet_columns).compact
+    else
+      candidiates_to_append[export_candidate_ad] =
+        [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+    end
+  else
+    create_new_ad_spreadsheet(export_candidate_ad)
+    candidiates_to_append[export_candidate_ad] =
+      [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+  end
+end
+
+def ad_spreadsheet_columns
+  @ad_spreadsheet_columns ||= sheet_columns(
     MASTER_SCHEMA_SPREADSHEET_ID,
     MASTER_SCHEMA_SHEET_ID,
   )[0]
-  candidiates_to_append = {}
-  export_candidates.each do |id, export_candidate|
-    # See if candidate already exists
-    if (existing_candidates[id])
-      puts 'candidate exists'
-      unless ads_match?(existing_candidates[id], export_candidate)
-        moved_candidates <<
-          export_candidate.values_at(*ad_spreadsheet_columns).compact
-      end
-      if basic_info_changed?(existing_candidates[id], export_candidate)
-        changed_candidates <<
-          export_candidate.values_at(*ad_spreadsheet_columns).compact
-      end
-    else
-      puts 'new candidate'
-      export_candidate_ad = export_candidate['AD']
-      if assembly_district_sheets.find do |sheet|
-        sheet['assembly_district'] == export_candidate_ad
-      end
-        if candidiates_to_append[export_candidate_ad]
-          candidiates_to_append[export_candidate_ad] <<
-            export_candidate.values_at(*ad_spreadsheet_columns).compact
-        else
-          candidiates_to_append[export_candidate_ad] =
-            [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
-        end
-      else
-        create_new_ad_spreadsheet(export_candidate_ad)
-        candidiates_to_append[export_candidate_ad] =
-          [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
-      end
-    end
-  end
+end
+
+def add_candidates_to_spreadsheets(
+  changed_candidates,
+  moved_candidates,
+  candidiates_to_append
+)
   append_candidates_to_spreadsheet(
     changed_candidates,
     UPDATED_CANDIDATES_SPREADSHEET_ID,
@@ -338,10 +383,6 @@ def process_export_from_nb
     )
   end
 end
-
-# def move_candidate_between_ads(candidate, current_ad, new_ad)
-#
-# end
 
 def ads_match?(existing_candidiate, export_candidate)
   existing_candidiate['AD'].to_s == export_candidate['AD'].to_s
@@ -415,10 +456,10 @@ def titleize(str)
     .join(' ')
 end
 
-def formatted_candidates_to_import(export_candidates)
+def formatted_candidates_to_import(candidates)
   candidiates_with_invalid_addresses = []
   formatted_candidates =
-    export_candidates.reduce({}) do |cands_to_imp, (id, export_candidate)|
+    candidates.reduce({}) do |cands_to_imp, (id, export_candidate)|
       formatted_attributes = {}
       formatted_attributes['Address'] = format_address(export_candidate)
       unless formatted_attributes['Address']

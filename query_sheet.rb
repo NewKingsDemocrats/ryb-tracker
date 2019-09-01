@@ -100,27 +100,6 @@ def read_sheet(spreadsheet_id, range)
   end
 end
 
-# def get_ad_sheet_id(ad)
-#   assembly_district_sheets = read_sheet(
-#     ENV_VARS_SPREADSHEET_ID,
-#     DISTRICT_TO_SPREADSHEET_ID,
-#   )
-#   assembly_district_sheets.find do |row|
-#     row['assembly_district'] == ad.to_s
-#   end['spreadsheet_id']
-# end
-#
-# # Call this to verify that appending to a sheet works.
-# def test_append_sheet()
-#   values = read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID)
-#   ad = 56
-#   append_candidate_to_ad_sheet(ad, values[0])
-# end
-#
-# def append_candidate_to_ad_sheet(ad, candidate)
-#   append_candidate_to_spreadsheet(candidate, get_ad_sheet_id(ad))
-# end
-
 def append_candidate_to_spreadsheet(
   candidate,
   spreadsheet_id,
@@ -620,5 +599,3 @@ def create_new_ad_spreadsheet(ad)
 end
 
 process_export_from_nb
-
-# puts "the spreadsheet schemas are #{spreadsheets_columns_valid? ? '' : 'not '}valid"

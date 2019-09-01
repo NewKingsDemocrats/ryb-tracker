@@ -176,7 +176,7 @@ end
 def sheet_columns(spreadsheet_id, page_id)
   service.get_spreadsheet_values(
     spreadsheet_id,
-    page_id + '!1:1',
+    page_id + (page_id.match(/!/) ? '' : '!1:1'),
   ).values
 end
 
@@ -265,9 +265,9 @@ end
 # Code that runs over the exported data from NationBuilder, does validation, and adds new candidates to the appropriate AD sheet.
 def process_export_from_nb
   # Get all candidates from the export.
-  changed_candidates = []
+  updated_candidates = []
   moved_candidates = []
-  candidiates_to_append = {}
+  candidates_to_append = {}
   export_candidates.each do |id, export_candidate|
     # See if candidate already exists
     if (existing_candidates[id])
@@ -275,29 +275,32 @@ def process_export_from_nb
         existing_candidates[id],
         export_candidate,
         moved_candidates,
-        changed_candidates,
+        updated_candidates,
       )
     else
-      process_new_candidate(export_candidate, candidiates_to_append)
+      process_new_candidate(export_candidate, candidates_to_append)
     end
   end
   add_candidates_to_spreadsheets(
-    changed_candidates,
+    updated_candidates,
     moved_candidates,
-    candidiates_to_append
+    candidates_to_append
   )
   puts "#{
-    changed_candidates.count
+    updated_candidates.count
   } changed candidates, #{
     moved_candidates.count
   } moved candidates, and #{
-    candidiates_to_append.count
+    candidates_to_append.values.reduce(0) do |sum, cands|
+      sum += cands.count
+      sum
+    end
   } new candidates processed."
 end
 
 def existing_candidates
   # Load all candidates from each sheet into an object for quick lookup.
-  candidates_by_attribute(
+  @existing_candidates ||= candidates_by_attribute(
     assembly_district_sheets.map{ |admapping|
       read_sheet(
         admapping['spreadsheet_id'],
@@ -309,7 +312,7 @@ def existing_candidates
 end
 
 def export_candidates
-  formatted_candidates_to_import(
+  @export_candidates ||= formatted_candidates_to_import(
     candidates_by_attribute(
       read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID),
       'nationbuilder_id',
@@ -321,60 +324,92 @@ def process_existing_candidate(
   existing_candidate,
   export_candidate,
   moved_candidates,
-  changed_candidates
+  updated_candidates
 )
   puts 'candidate exists'
-  unless ads_match?(existing_candidate, export_candidate)
-    moved_candidates <<
-      export_candidate.values_at(*ad_spreadsheet_columns).compact
-  end
-  if basic_info_changed?(existing_candidate, export_candidate)
-    changed_candidates <<
-      export_candidate.values_at(*ad_spreadsheet_columns).compact
+  if !ads_match?(existing_candidate, export_candidate) &&
+    !candidate_in_moved_or_updated_sheet?(export_candidate)
+      moved_candidates <<
+        export_candidate.values_at(*ad_spreadsheet_columns)
+  elsif basic_info_changed?(existing_candidate, export_candidate) &&
+    !candidate_in_moved_or_updated_sheet?(export_candidate)
+    updated_candidates <<
+      export_candidate.values_at(*ad_spreadsheet_columns)
   end
 end
 
-def process_new_candidate(export_candidate, candidiates_to_append)
+def candidate_in_moved_or_updated_sheet?(candidate)
+  (existing_moved_candidates.keys + existing_updated_candidates.keys)
+    .include?(candidate['RYBID'])
+end
+
+def existing_moved_candidates
+  # Load all candidates from each sheet into an object for quick lookup.
+  @existing_moved_candidates ||= candidates_by_attribute(
+    read_sheet(
+      MOVED_CANDIDATES_SPREADSHEET_ID,
+      MASTER_SCHEMA_SHEET_ID,
+    ),
+    'RYBID',
+  )
+end
+
+def existing_updated_candidates
+  # Load all candidates from each sheet into an object for quick lookup.
+  @existing_updated_candidates ||= candidates_by_attribute(
+    read_sheet(
+      UPDATED_CANDIDATES_SPREADSHEET_ID,
+      MASTER_SCHEMA_SHEET_ID,
+    ),
+    'RYBID',
+  )
+end
+
+def process_new_candidate(export_candidate, candidates_to_append)
   puts 'new candidate'
   export_candidate_ad = export_candidate['AD']
-  if assembly_district_sheets.find do |sheet|
-    sheet['assembly_district'] == export_candidate_ad
-  end
-    if candidiates_to_append[export_candidate_ad]
-      candidiates_to_append[export_candidate_ad] <<
-        export_candidate.values_at(*ad_spreadsheet_columns).compact
+  if ad_sheet_exists?(assembly_district_sheets, export_candidate_ad)
+    if candidates_to_append[export_candidate_ad]
+      candidates_to_append[export_candidate_ad] <<
+        export_candidate.values_at(*ad_spreadsheet_columns)
     else
-      candidiates_to_append[export_candidate_ad] =
-        [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+      candidates_to_append[export_candidate_ad] =
+        [ export_candidate.values_at(*ad_spreadsheet_columns) ]
     end
   else
     create_new_ad_spreadsheet(export_candidate_ad)
-    candidiates_to_append[export_candidate_ad] =
-      [ export_candidate.values_at(*ad_spreadsheet_columns).compact ]
+    candidates_to_append[export_candidate_ad] =
+      [ export_candidate.values_at(*ad_spreadsheet_columns) ]
+  end
+end
+
+def ad_sheet_exists?(assembly_district_sheets, ad)
+  assembly_district_sheets.find do |sheet|
+    sheet['assembly_district'] == ad
   end
 end
 
 def ad_spreadsheet_columns
   @ad_spreadsheet_columns ||= sheet_columns(
     MASTER_SCHEMA_SPREADSHEET_ID,
-    MASTER_SCHEMA_SHEET_ID,
+    MASTER_SCHEMA_SHEET_ID + '!A:M',
   )[0]
 end
 
 def add_candidates_to_spreadsheets(
-  changed_candidates,
+  updated_candidates,
   moved_candidates,
-  candidiates_to_append
+  candidates_to_append
 )
   append_candidates_to_spreadsheet(
-    changed_candidates,
+    updated_candidates,
     UPDATED_CANDIDATES_SPREADSHEET_ID,
   )
   append_candidates_to_spreadsheet(
     moved_candidates,
     MOVED_CANDIDATES_SPREADSHEET_ID,
   )
-  candidiates_to_append.each do |ad, candidates|
+  candidates_to_append.each do |ad, candidates|
     append_candidates_to_spreadsheet(
       candidates,
       assembly_district_sheets.find do |sheet|
@@ -389,7 +424,7 @@ def ads_match?(existing_candidiate, export_candidate)
 end
 
 def basic_info_changed?(existing_candidate, export_candidate)
-  !existing_candidate.merge(export_candidate) == existing_candidate
+   !(export_candidate == existing_candidate)
 end
 
 def column_to_letter(num)
@@ -438,15 +473,10 @@ end
 def candidate_address_valid?(candidate)
   candidate['primary_address1'] &&
     candidate['primary_address1'].length > 0 &&
-    candidate['primary_city'] &&
-    candidate['primary_city'].length > 0 &&
-    candidate['primary_city'].match(/brooklyn|new york/i) &&
-    candidate['primary_state'] &&
-    candidate['primary_state'].length > 0 &&
-    candidate['primary_state'].match(/ny/i) &&
     candidate['primary_zip'] &&
     candidate['primary_zip'].length > 0 &&
-    candidate['primary_zip'].match(/\d{5}/)
+    candidate['primary_zip'].match(/\d{5}/) &&
+    candidate['primary_zip'].match(/112/)
 end
 
 def titleize(str)

@@ -154,15 +154,9 @@ end
 
 def standardize_phone_number_format(phone_number)
   begin
-    phone_number.split('').reverse_each.select do |c|
+    phone_number.split('').select do |c|
       c.match(/\d/)
-    end[0...10].each_with_index.reduce('') do |num, (c,i)|
-      if i == 4 || i == 7
-        num = '-' + num
-      end
-      num = c + num
-      num
-    end.match(/\d{3}-\d{3}-\d{4}/).to_s
+    end.join('').match(/(\d{3})(\d{3})(\d{4})$/).to_a[1..-1].join('-')
   rescue
     nil
   end

@@ -10,10 +10,10 @@ ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
-# NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
-NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
+NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
+# NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
-INVALID_ADDRESSES_SPREADSHEET_ID = '1oh5Zxl4OpgjxQZs3gKLJ4u6IXRVJo20ocXldf2KBGDw'
+INVALID_ADDRESSES_SPREADSHEET_ID = '1dlC9ZM1tMLW5XazyR6BVRDRapbllx_d6gko--41p7a8'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
 UPDATED_CANDIDATES_SPREADSHEET_ID = '1GgRV5mOZPzA9tTPDKx90ejvkXbTyTM8HaF8OWI3JmV4'
 MOVED_CANDIDATES_SPREADSHEET_ID = '1tX0vGXrgXSXl3JBifoWfdeFpFfkrnNLy22GZeOTamjw'
@@ -167,9 +167,25 @@ end
 
 def format_phone_number(candidate)
   unless candidate['phone_number'].empty?
-    candidate['phone_number']
+    standardize_phone_number_format(candidate['phone_number'])
   else
-    candidate['mobile_number']
+    standardize_phone_number_format(candidate['mobile_number'])
+  end
+end
+
+def standardize_phone_number_format(phone_number)
+  begin
+    phone_number.split('').reverse_each.select do |c|
+      c.match(/\d/)
+    end[0...10].each_with_index.reduce('') do |num, (c,i)|
+      if i == 4 || i == 7
+        num = '-' + num
+      end
+      num = c + num
+      num
+    end.match(/\d{3}-\d{3}-\d{4}/).to_s
+  rescue
+    nil
   end
 end
 
@@ -328,17 +344,17 @@ def process_existing_candidate(
 )
   puts 'candidate exists'
   if !ads_match?(existing_candidate, export_candidate) &&
-    !candidate_in_moved_or_updated_sheet?(export_candidate)
+    !candidate_in_manual_review_sheet?(export_candidate)
       moved_candidates <<
         export_candidate.values_at(*ad_spreadsheet_columns)
   elsif basic_info_changed?(existing_candidate, export_candidate) &&
-    !candidate_in_moved_or_updated_sheet?(export_candidate)
+    !candidate_in_manual_review_sheet?(export_candidate)
     updated_candidates <<
       export_candidate.values_at(*ad_spreadsheet_columns)
   end
 end
 
-def candidate_in_moved_or_updated_sheet?(candidate)
+def candidate_in_manual_review_sheet?(candidate)
   (existing_moved_candidates.keys + existing_updated_candidates.keys)
     .include?(candidate['RYBID'])
 end
@@ -488,6 +504,7 @@ end
 
 def formatted_candidates_to_import(candidates)
   candidiates_with_invalid_addresses = []
+  candidiates_with_invalid_ads = []
   formatted_candidates =
     candidates.reduce({}) do |cands_to_imp, (id, export_candidate)|
       formatted_attributes = {}
@@ -505,6 +522,10 @@ def formatted_candidates_to_import(candidates)
       }, ED: #{
         formatted_attributes['ED']
       }"
+      unless ad_valid?(formatted_attributes['AD'])
+        candidiates_with_invalid_ads << export_candidate.values
+        next cands_to_imp
+      end
       cands_to_imp[id] = {
         'Name' => "#{
           export_candidate['first_name']
@@ -517,23 +538,70 @@ def formatted_candidates_to_import(candidates)
       }.merge(formatted_attributes)
       cands_to_imp
     end
+    add_invalid_candidates_to_spreadsheets(
+      candidiates_with_invalid_addresses,
+      candidiates_with_invalid_ads
+    )
+  formatted_candidates
+end
+
+def ad_valid?(ad)
+  (41..60) === ad&.to_i || 64 == ad&.to_i
+end
+
+def add_invalid_candidates_to_spreadsheets(
+  candidiates_with_invalid_addresses,
+  candidiates_with_invalid_ads
+)
   if candidiates_with_invalid_addresses.length > 0
     append_candidates_to_spreadsheet(
-      candidiates_with_invalid_addresses,
+      candidiates_with_invalid_addresses.select do |candidate|
+        !existing_candidates_with_invalid_addresses
+          .keys
+          .include?(candidate.first)
+      end,
       INVALID_ADDRESSES_SPREADSHEET_ID,
       NB_EXPORT_SHEET_ID,
     )
   end
-  formatted_candidates
+  if candidiates_with_invalid_ads.length > 0
+    append_candidates_to_spreadsheet(
+      candidiates_with_invalid_ads.select do |candidate|
+        !existing_candidates_with_invalid_ads
+          .keys
+          .include?(candidate.first)
+      end,
+      INVALID_ADS_SPREADSHEET_ID,
+      NB_EXPORT_SHEET_ID,
+    )
+  end
 end
 
-def ad_match?(candidiate, new_candidate)
-  candidate['ad'] == new_candidate['ad']
+def existing_candidates_with_invalid_addresses
+  # Load all candidates from each sheet into an object for quick lookup.
+  @existing_candidates_with_invalid_addresses ||= candidates_by_attribute(
+    read_sheet(
+      INVALID_ADDRESSES_SPREADSHEET_ID,
+      NB_EXPORT_SHEET_ID,
+    ),
+    'nationbuilder_id',
+  )
+end
+
+def existing_candidates_with_invalid_ads
+  # Load all candidates from each sheet into an object for quick lookup.
+  @existing_candidates_with_invalid_ads ||= candidates_by_attribute(
+    read_sheet(
+      INVALID_ADS_SPREADSHEET_ID,
+      NB_EXPORT_SHEET_ID,
+    ),
+    'nationbuilder_id',
+  )
 end
 
 def create_new_ad_spreadsheet(ad)
   new_ad_spreadsheet = drive_service.copy_file(
-    '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0',
+    MASTER_SCHEMA_SPREADSHEET_ID,
     Google::Apis::DriveV3::File.new({
       name: "AD #{ad}",
       parents: ['16NtRayVsCalmmhsOurTBA_BXFwejbV25'],
@@ -552,6 +620,5 @@ def create_new_ad_spreadsheet(ad)
 end
 
 process_export_from_nb
-# binding.pry
 
 # puts "the spreadsheet schemas are #{spreadsheets_columns_valid? ? '' : 'not '}valid"

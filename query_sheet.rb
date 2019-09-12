@@ -301,13 +301,19 @@ end
 
 def check_and_move_existing_candidates
   candidates_to_move.each do |ad, candidates|
+    spreadsheet_id =
+      if ad_sheet_exists?(ad)
+        assembly_district_sheets.find do |sheet|
+          sheet['assembly_district'] == ad
+        end['spreadsheet_id']
+      else
+        create_new_ad_spreadsheet(ad).id
+      end
     append_candidates_to_spreadsheet(
       candidates.map do |candidate|
         candidate.values_at(*ad_spreadsheet_columns)
       end,
-      assembly_district_sheets.find do |sheet|
-        sheet['assembly_district'] == ad
-      end['spreadsheet_id'],
+      spreadsheet_id,
     )
   end
   remove_outdated_candidiates
@@ -405,7 +411,7 @@ end
 def process_new_candidate(export_candidate, candidates_to_append)
   puts 'new candidate'
   export_candidate_ad = export_candidate['AD']
-  if ad_sheet_exists?(assembly_district_sheets, export_candidate_ad)
+  if ad_sheet_exists?(export_candidate_ad)
     if candidates_to_append[export_candidate_ad]
       candidates_to_append[export_candidate_ad] <<
         export_candidate.values_at(*ad_spreadsheet_columns)
@@ -420,7 +426,7 @@ def process_new_candidate(export_candidate, candidates_to_append)
   end
 end
 
-def ad_sheet_exists?(assembly_district_sheets, ad)
+def ad_sheet_exists?(ad)
   assembly_district_sheets.find do |sheet|
     sheet['assembly_district'] == ad
   end

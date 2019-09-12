@@ -15,8 +15,8 @@ NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 INVALID_ADDRESSES_SPREADSHEET_ID = '1dlC9ZM1tMLW5XazyR6BVRDRapbllx_d6gko--41p7a8'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
-UPDATED_CANDIDATES_SPREADSHEET_ID = '1GgRV5mOZPzA9tTPDKx90ejvkXbTyTM8HaF8OWI3JmV4'
-MOVED_CANDIDATES_SPREADSHEET_ID = '1tX0vGXrgXSXl3JBifoWfdeFpFfkrnNLy22GZeOTamjw'
+UPDATED_CANDIDATES_SPREADSHEET_ID = '13-xUnEJScMhvrBFq7niyd2ZWy1iO3M41Aro-L_Cwg8o'
+MOVED_CANDIDATES_SPREADSHEET_ID = '10qTJW5MLbyf8jKNrFyQPYz_wpLsM3EG4Zgbnizv-fIU'
 
 def spreadsheets_columns_valid?
   if invalid_speadsheets_columns && invalid_speadsheets_columns.length > 0
@@ -381,7 +381,7 @@ end
 def ad_spreadsheet_columns
   @ad_spreadsheet_columns ||= sheet_columns(
     MASTER_SCHEMA_SPREADSHEET_ID,
-    MASTER_SCHEMA_SHEET_ID + '!A:M',
+    MASTER_SCHEMA_SHEET_ID + '!A:H',
   )[0]
 end
 

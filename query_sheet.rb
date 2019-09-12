@@ -258,28 +258,12 @@ def process_export_from_nb
   moved_candidates = []
   candidates_to_append = {}
   export_candidates.each do |id, export_candidate|
-    # See if candidate already exists
-    if (existing_candidates[id])
-      process_existing_candidate(
-        existing_candidates[id],
-        export_candidate,
-        moved_candidates,
-        updated_candidates,
-      )
-    else
+    unless (existing_candidates[id])
       process_new_candidate(export_candidate, candidates_to_append)
     end
   end
-  add_candidates_to_spreadsheets(
-    updated_candidates,
-    moved_candidates,
-    candidates_to_append
-  )
+  add_candidates_to_spreadsheets(candidates_to_append)
   puts "#{
-    updated_candidates.count
-  } changed candidates, #{
-    moved_candidates.count
-  } moved candidates, and #{
     candidates_to_append.values.reduce(0) do |sum, cands|
       sum += cands.count
       sum
@@ -290,14 +274,20 @@ end
 def existing_candidates
   # Load all candidates from each sheet into an object for quick lookup.
   @existing_candidates ||= candidates_by_attribute(
-    assembly_district_sheets.map{ |admapping|
-      read_sheet(
+    existing_candidates_by_ad.values.flatten,
+    'RYBID',
+  )
+end
+
+def existing_candidates_by_ad
+  @existing_candidates_by_ad ||=
+    assembly_district_sheets.reduce({}) do |candidates, admapping|
+      candidates[admapping['assembly_district']] = read_sheet(
         admapping['spreadsheet_id'],
         MASTER_SCHEMA_SHEET_ID,
       )
-    }.flatten,
-    'RYBID',
-  )
+      candidates
+    end
 end
 
 def export_candidates
@@ -309,49 +299,107 @@ def export_candidates
   )
 end
 
-def process_existing_candidate(
-  existing_candidate,
-  export_candidate,
-  moved_candidates,
-  updated_candidates
-)
-  puts 'candidate exists'
-  if !ads_match?(existing_candidate, export_candidate) &&
-    !candidate_in_manual_review_sheet?(export_candidate)
-      moved_candidates <<
-        export_candidate.values_at(*ad_spreadsheet_columns)
-  elsif basic_info_changed?(existing_candidate, export_candidate) &&
-    !candidate_in_manual_review_sheet?(export_candidate)
-    updated_candidates <<
-      export_candidate.values_at(*ad_spreadsheet_columns)
+def check_and_move_existing_candidates
+  candidates_to_move.each do |ad, candidates|
+    append_candidates_to_spreadsheet(
+      candidates.map do |candidate|
+        candidate.values_at(*ad_spreadsheet_columns)
+      end,
+      assembly_district_sheets.find do |sheet|
+        sheet['assembly_district'] == ad
+      end['spreadsheet_id'],
+    )
+  end
+  remove_outdated_candidiates
+  puts "moved #{
+    candidates_to_move.values.flatten.count
+  } candidates"
+end
+
+def remove_outdated_candidiates
+  current_moved_candidates_rows.each do |ad, rows|
+    spreadsheet_id = assembly_district_sheets.find do |sheet|
+      sheet['assembly_district'] == ad
+    end['spreadsheet_id']
+    sheet_id = candidate_view_sheet_id(spreadsheet_id)
+    service.batch_update_spreadsheet(
+      spreadsheet_id,
+      Google::Apis::SheetsV4::BatchUpdateSpreadsheetRequest.new({
+        requests: rows.map do |row|
+          {
+            delete_dimension:
+              Google::Apis::SheetsV4::DeleteDimensionRequest.new({
+                range: Google::Apis::SheetsV4::DimensionRange.new({
+                  sheet_id: sheet_id,
+                  dimension: 'ROWS',
+                  start_index: row + 1,
+                  end_index: row + 2
+                })
+              })
+          }
+        end
+      }),
+    )
   end
 end
 
-def candidate_in_manual_review_sheet?(candidate)
-  (existing_moved_candidates.keys + existing_updated_candidates.keys)
-    .include?(candidate['RYBID'])
+def candidate_view_sheet_id(spreadsheet_id)
+  service
+    .get_spreadsheet('1SDpSo1sD0DykFa82IiJOy9iSV7iJn9KaTFbmNBz_zqE')
+    .sheets
+    .find { |sheet| sheet.properties.title = MASTER_SCHEMA_SHEET_ID }
+    .properties
+    .sheet_id
 end
 
-def existing_moved_candidates
-  # Load all candidates from each sheet into an object for quick lookup.
-  @existing_moved_candidates ||= candidates_by_attribute(
-    read_sheet(
-      MOVED_CANDIDATES_SPREADSHEET_ID,
-      MASTER_SCHEMA_SHEET_ID,
-    ),
-    'RYBID',
-  )
+def current_moved_candidates_rows
+  moved_candidates_by_current_ad
+    .reduce({}) do |ad_rows, (current_ad, moved_candidates)|
+      moved_candidates.each do |moved_candidate|
+        index =
+          existing_candidates_by_ad[current_ad]
+            .find_index do |existing_candidate|
+              moved_candidate['RYBID'] == existing_candidate['RYBID']
+            end
+        if ad_rows[current_ad]
+          ad_rows[current_ad] << index - ad_rows[current_ad].length
+        else
+          ad_rows[current_ad] = [index]
+        end
+      end
+      ad_rows
+    end
 end
 
-def existing_updated_candidates
-  # Load all candidates from each sheet into an object for quick lookup.
-  @existing_updated_candidates ||= candidates_by_attribute(
-    read_sheet(
-      UPDATED_CANDIDATES_SPREADSHEET_ID,
-      MASTER_SCHEMA_SHEET_ID,
-    ),
-    'RYBID',
-  )
+def moved_candidates_by_current_ad
+  candidates_to_move.values.flatten.reduce({}) do |candidates, candidate|
+    current_ad = existing_candidates[candidate['RYBID']]['AD']
+    if candidates[current_ad]
+      candidates[current_ad] << candidate
+    else
+      candidates[current_ad] = [candidate]
+    end
+    candidates
+  end
+end
+
+def candidates_to_move
+  @candidates_to_move ||=
+    existing_candidates.reduce({}) do |candidates, (id, candidate)|
+      current_ad, current_ed = candidate.values_at('AD', 'ED')
+      new_ad, new_ed = get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
+      unless current_ad == new_ad
+        updated_candidate = candidate.dup
+        updated_candidate['AD'] = new_ad
+        updated_candidate['ED'] = new_ed
+        if candidates[new_ad]
+          candidates[new_ad] << updated_candidate
+        else
+          candidates[new_ad] = [updated_candidate]
+        end
+      end
+      candidates
+    end
 end
 
 def process_new_candidate(export_candidate, candidates_to_append)
@@ -385,19 +433,7 @@ def ad_spreadsheet_columns
   )[0]
 end
 
-def add_candidates_to_spreadsheets(
-  updated_candidates,
-  moved_candidates,
-  candidates_to_append
-)
-  append_candidates_to_spreadsheet(
-    updated_candidates,
-    UPDATED_CANDIDATES_SPREADSHEET_ID,
-  )
-  append_candidates_to_spreadsheet(
-    moved_candidates,
-    MOVED_CANDIDATES_SPREADSHEET_ID,
-  )
+def add_candidates_to_spreadsheets(candidates_to_append)
   candidates_to_append.each do |ad, candidates|
     append_candidates_to_spreadsheet(
       candidates,
@@ -505,6 +541,7 @@ def formatted_candidates_to_import(candidates)
         } #{
           export_candidate['last_name']
         }",
+        'Type' => ARGV[1] || '2020',
         'RYBID' => export_candidate['nationbuilder_id'],
         'Phone' => format_phone_number(export_candidate),
         'Email' => export_candidate['email'],
@@ -592,4 +629,17 @@ def create_new_ad_spreadsheet(ad)
   new_ad_spreadsheet
 end
 
-process_export_from_nb
+case ARGV[0]
+when /import/
+  process_export_from_nb
+when /check/
+  check_and_move_existing_candidates
+else
+  puts "\npass either an \"import\" flag (and an optional \"task\" flag)\n"\
+    'to IMPORT candidates from the RYB NationBuilder dump, e.g.'\
+    "\n\truby query_sheet.rb import 2019"\
+    "\n\n\t\t\t***OR***\n\n"\
+    "a \"check\" flag to move any of the imported candidates to their\n"\
+    'appropriate AD spreadsheets if their AD has changed, e.g.'\
+    "\n\truby query_sheet.rb check"
+end

@@ -10,8 +10,9 @@ ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 MASTER_SCHEMA_SHEET_ID = 'Candidate View'
-NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
+# NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 # NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
+NB_EXPORT_SPREADSHEET_ID = ARGV[1]
 NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 INVALID_ADDRESSES_SPREADSHEET_ID = '1dlC9ZM1tMLW5XazyR6BVRDRapbllx_d6gko--41p7a8'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
@@ -113,7 +114,7 @@ def append_candidate_to_spreadsheet(
       values:
         error_sheet ? [ candidate.values ] : candidate_for_ad_sheet(candidate),
     ),
-    value_input_option: 'RAW',
+    value_input_option: 'USER_ENTERED',
   )
 end
 
@@ -126,7 +127,7 @@ def append_candidates_to_spreadsheet(
     spreadsheet_id,
     range,
     Google::Apis::SheetsV4::ValueRange.new(values: candidiates),
-    value_input_option: 'RAW',
+    value_input_option: 'USER_ENTERED',
   )
 end
 
@@ -253,6 +254,7 @@ end
 
 # Code that runs over the exported data from NationBuilder, does validation, and adds new candidates to the appropriate AD sheet.
 def process_export_from_nb
+  spreadsheets_columns_valid?
   # Get all candidates from the export.
   updated_candidates = []
   moved_candidates = []
@@ -300,6 +302,7 @@ def export_candidates
 end
 
 def check_and_move_existing_candidates
+  spreadsheets_columns_valid?
   candidates_to_move.each do |ad, candidates|
     spreadsheet_id =
       if ad_sheet_exists?(ad)
@@ -435,7 +438,7 @@ end
 def ad_spreadsheet_columns
   @ad_spreadsheet_columns ||= sheet_columns(
     MASTER_SCHEMA_SPREADSHEET_ID,
-    MASTER_SCHEMA_SHEET_ID + '!A:H',
+    MASTER_SCHEMA_SHEET_ID + '!1:1',
   )[0]
 end
 
@@ -511,10 +514,7 @@ def candidate_address_valid?(candidate)
 end
 
 def titleize(str)
-  str
-    .to_s.split(/ |\_|\-/)
-    .map(&:capitalize)
-    .join(' ')
+  str.to_s.split(/\s/).map(&:capitalize).join(' ')
 end
 
 def formatted_candidates_to_import(candidates)
@@ -525,7 +525,7 @@ def formatted_candidates_to_import(candidates)
       formatted_attributes = {}
       formatted_attributes['Address'] = format_address(export_candidate)
       unless formatted_attributes['Address']
-        candidiates_with_invalid_addresses << export_candidate.values
+        candidiates_with_invalid_addresses << export_candidate.values + [type]
         next cands_to_imp
       end
       puts formatted_attributes['Address']
@@ -538,7 +538,7 @@ def formatted_candidates_to_import(candidates)
         formatted_attributes['ED']
       }"
       unless ad_valid?(formatted_attributes['AD'])
-        candidiates_with_invalid_ads << export_candidate.values
+        candidiates_with_invalid_ads << export_candidate.values + [type]
         next cands_to_imp
       end
       cands_to_imp[id] = {
@@ -547,10 +547,11 @@ def formatted_candidates_to_import(candidates)
         } #{
           export_candidate['last_name']
         }",
-        'Type' => ARGV[1] || '2020',
+        'Type' => type,
         'RYBID' => export_candidate['nationbuilder_id'],
         'Phone' => format_phone_number(export_candidate),
         'Email' => export_candidate['email'],
+        'Status' => '=if(indirect("a"&row())="","",if(indirect("p"&row())="Declined","D",if(indirect("cb"&row())="yes","RECD",if(indirect("ca"&row())="Done","P/DONE",if(indirect("ca"&row())="Moving Along","P/OK",if(indirect("ca"&row())="Started","P/S",if(indirect("ca"&row())="Struggling","P/STRG",if(indirect("ca"&row())="Not Started","P/NS",if(indirect("by"&row())="yes","P/PKU",if(indirect("bw"&row())="yes","P/PLAN",if(indirect("bv"&row())="Attempt #3","P/3C",if(indirect("bv"&row())="Attempt #2","P/2C",if(indirect("bv"&row())="Attempt #1","P/1C",if(indirect("br"&row())>0,if(indirect("p"&row())="Yes",if(indirect("bv"&row())="No Attempts","P/NC",if(indirect("u"&row())="Complete",if(indirect("br"&row())>1,"INT/E+","INT/E"),"CONF/E"),if(indirect("p"&row())="Maybe","MAY/E",if(indirect("o"&row())="Attempt #3","3C/E",if(O2="Attempt #2","2C/E",if(indirect("o"&row())="Attempt #1","1C/E","NC/E")))))),if(indirect("u"&row())="Complete",if(indirect("bv"&row())="No Attempts","P/NC","INT"),if(indirect("p"&row())="Yes","CONF",if(indirect("p"&row())="Maybe","MAY",if(indirect("o"&row())="Attempt #3","3C",if(indirect("o"&row())="Attempt #2","2C",if(indirect("o"&row())="Attempt #1","1C","NC"))))))))))))))))))))',
       }.merge(formatted_attributes)
       cands_to_imp
     end
@@ -591,6 +592,10 @@ def add_invalid_candidates_to_spreadsheets(
       NB_EXPORT_SHEET_ID,
     )
   end
+end
+
+def type
+  ARGV[2] || '2020'
 end
 
 def existing_candidates_with_invalid_addresses
@@ -641,9 +646,11 @@ when /import/
 when /check/
   check_and_move_existing_candidates
 else
-  puts "\npass either an \"import\" flag (and an optional \"task\" flag)\n"\
+  puts "\npass either an \"import\" flag with a spreadsheet ID "\
+    "(and an optional \"task\" flag)\n"\
     'to IMPORT candidates from the RYB NationBuilder dump, e.g.'\
-    "\n\truby query_sheet.rb import 2019"\
+    "\n\truby query_sheet.rb "\
+    "import 1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s 2018"\
     "\n\n\t\t\t***OR***\n\n"\
     "a \"check\" flag to move any of the imported candidates to their\n"\
     'appropriate AD spreadsheets if their AD has changed, e.g.'\

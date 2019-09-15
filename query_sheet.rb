@@ -525,7 +525,12 @@ def formatted_candidates_to_import(candidates)
       formatted_attributes = {}
       formatted_attributes['Address'] = format_address(export_candidate)
       unless formatted_attributes['Address']
-        candidiates_with_invalid_addresses << export_candidate.values + [type]
+        candidiates_with_invalid_addresses << values_and_type(
+          INVALID_ADDRESSES_SPREADSHEET_ID,
+          NB_EXPORT_SHEET_ID,
+          export_candidate.values,
+          type
+        )
         next cands_to_imp
       end
       puts formatted_attributes['Address']
@@ -538,7 +543,12 @@ def formatted_candidates_to_import(candidates)
         formatted_attributes['ED']
       }"
       unless ad_valid?(formatted_attributes['AD'])
-        candidiates_with_invalid_ads << export_candidate.values + [type]
+        candidiates_with_invalid_ads << values_and_type(
+          INVALID_ADeS_SPREADSHEET_ID,
+          NB_EXPORT_SHEET_ID,
+          export_candidate.values,
+          type
+        )
         next cands_to_imp
       end
       cands_to_imp[id] = {
@@ -552,6 +562,7 @@ def formatted_candidates_to_import(candidates)
         'Phone' => format_phone_number(export_candidate),
         'Email' => export_candidate['email'],
         'Status' => '=if(indirect("a"&row())="","",if(indirect("p"&row())="Declined","D",if(indirect("cb"&row())="yes","RECD",if(indirect("ca"&row())="Done","P/DONE",if(indirect("ca"&row())="Moving Along","P/OK",if(indirect("ca"&row())="Started","P/S",if(indirect("ca"&row())="Struggling","P/STRG",if(indirect("ca"&row())="Not Started","P/NS",if(indirect("by"&row())="yes","P/PKU",if(indirect("bw"&row())="yes","P/PLAN",if(indirect("bv"&row())="Attempt #3","P/3C",if(indirect("bv"&row())="Attempt #2","P/2C",if(indirect("bv"&row())="Attempt #1","P/1C",if(indirect("br"&row())>0,if(indirect("p"&row())="Yes",if(indirect("bv"&row())="No Attempts","P/NC",if(indirect("u"&row())="Complete",if(indirect("br"&row())>1,"INT/E+","INT/E"),"CONF/E"),if(indirect("p"&row())="Maybe","MAY/E",if(indirect("o"&row())="Attempt #3","3C/E",if(O2="Attempt #2","2C/E",if(indirect("o"&row())="Attempt #1","1C/E","NC/E")))))),if(indirect("u"&row())="Complete",if(indirect("bv"&row())="No Attempts","P/NC","INT"),if(indirect("p"&row())="Yes","CONF",if(indirect("p"&row())="Maybe","MAY",if(indirect("o"&row())="Attempt #3","3C",if(indirect("o"&row())="Attempt #2","2C",if(indirect("o"&row())="Attempt #1","1C","NC"))))))))))))))))))))',
+        'Events' => '=if(AQ4="yes",1,0)+if(AV4="yes",1,0)+if(BA4="yes",1,0)+if(BF4="yes",1,0)+if(BK4="yes",1,0)+if(BP4="yes",1,0)+if(AG4="yes",1,0)+if(AL4="yes",1,0)',
       }.merge(formatted_attributes)
       cands_to_imp
     end
@@ -596,6 +607,28 @@ end
 
 def type
   ARGV[2] || '2020'
+end
+
+def values_and_type(spreadsheet_id, page_id, values, type=nil)
+  type_index = column_index(spreadsheet_id, page_id, 'type')
+  if type && type_index
+    values.fill(
+      '',
+      values.length...type_index,
+    ) + [type]
+  else
+    values
+  end
+end
+
+def column_index(spreadsheet_id, page_id, field_name)
+  @column_index ||= Hash.new do |hash, field_name|
+    hash[field_name] =
+      sheet_columns(spreadsheet_id, page_id)[0].find_index do |column_name|
+        column_name == field_name
+      end
+  end
+  @column_index[field_name]
 end
 
 def existing_candidates_with_invalid_addresses

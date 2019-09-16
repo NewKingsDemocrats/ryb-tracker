@@ -7,13 +7,13 @@ require 'google/apis/sheets_v4'
 require 'google/apis/drive_v3'
 
 ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
-DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
+# DISTRICT_TO_SPREADSHEET_ID = 'district to spreadsheet ID'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
-MASTER_SCHEMA_SHEET_ID = 'Candidate View'
+# MASTER_SCHEMA_SHEET_ID = 'Candidate View'
 # NB_EXPORT_SPREADSHEET_ID = '1Jl_Gr-WcRstFhHNHGOVin9IAxfuCaXhNDnOAqOfHY8s'
 # NB_EXPORT_SPREADSHEET_ID = '1CM9S9hbN8TIw8maz1pp8WdV6tJklOq3ZPVCg_CFKMeo'
 NB_EXPORT_SPREADSHEET_ID = ARGV[1]
-NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
+# NB_EXPORT_SHEET_ID = 'nationbuilder-people-export-2019-07-09-2131'
 INVALID_ADDRESSES_SPREADSHEET_ID = '1dlC9ZM1tMLW5XazyR6BVRDRapbllx_d6gko--41p7a8'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
 UPDATED_CANDIDATES_SPREADSHEET_ID = '13-xUnEJScMhvrBFq7niyd2ZWy1iO3M41Aro-L_Cwg8o'
@@ -85,7 +85,7 @@ def authorize_service
   authorizer
 end
 
-def read_sheet(spreadsheet_id, range)
+def read_sheet(spreadsheet_id, range=first_sheet_title(spreadsheet_id))
   values = service.get_spreadsheet_values(
     spreadsheet_id,
     range,
@@ -104,7 +104,7 @@ end
 def append_candidate_to_spreadsheet(
   candidate,
   spreadsheet_id,
-  range=MASTER_SCHEMA_SHEET_ID,
+  range=first_sheet_title(spreadsheet_id),
   error_sheet=false
 )
   service.append_spreadsheet_value(
@@ -121,7 +121,7 @@ end
 def append_candidates_to_spreadsheet(
   candidiates,
   spreadsheet_id,
-  range=MASTER_SCHEMA_SHEET_ID
+  range=first_sheet_title(spreadsheet_id)
 )
   service.append_spreadsheet_value(
     spreadsheet_id,
@@ -163,23 +163,22 @@ def standardize_phone_number_format(phone_number)
   end
 end
 
-def sheet_columns(spreadsheet_id, page_id)
-  service.get_spreadsheet_values(
-    spreadsheet_id,
-    page_id + (page_id.match(/!/) ? '' : '!1:1'),
-  ).values
+def sheet_columns(spreadsheet_id, page_id=first_sheet_title(spreadsheet_id))
+  column_id = spreadsheet_id + page_id
+  @sheet_columns ||= Hash.new do |h, column_id|
+    h[column_id] =
+      service.get_spreadsheet_values(
+        spreadsheet_id,
+        page_id + '!1:1',
+      ).values&.first
+  end
+  @sheet_columns[column_id]
 end
 
 def invalid_speadsheets_columns
-  master_schema_columns = sheet_columns(
-    MASTER_SCHEMA_SPREADSHEET_ID,
-    MASTER_SCHEMA_SHEET_ID,
-  )
+  master_schema_columns = sheet_columns(MASTER_SCHEMA_SPREADSHEET_ID)
   assembly_district_sheets.reduce([]) do |arr, ad_sheet|
-    ad_sheet_columns = sheet_columns(
-      ad_sheet['spreadsheet_id'],
-      MASTER_SCHEMA_SHEET_ID,
-    )
+    ad_sheet_columns = sheet_columns(ad_sheet['spreadsheet_id'])
     unless ad_sheet_columns == master_schema_columns
       arr << {
         assembly_district: ad_sheet['assembly_district'],
@@ -201,7 +200,7 @@ end
 def assembly_district_sheets
   unless @ad_spreadsheets_cache_valid
     @assembly_district_sheets =
-      read_sheet(ENV_VARS_SPREADSHEET_ID, DISTRICT_TO_SPREADSHEET_ID)
+      read_sheet(ENV_VARS_SPREADSHEET_ID)
     @ad_spreadsheets_cache_valid = true
     @assembly_district_sheets
   end
@@ -284,10 +283,8 @@ end
 def existing_candidates_by_ad
   @existing_candidates_by_ad ||=
     assembly_district_sheets.reduce({}) do |candidates, admapping|
-      candidates[admapping['assembly_district']] = read_sheet(
-        admapping['spreadsheet_id'],
-        MASTER_SCHEMA_SHEET_ID,
-      )
+      candidates[admapping['assembly_district']] =
+        read_sheet(admapping['spreadsheet_id'])
       candidates
     end
 end
@@ -295,7 +292,7 @@ end
 def export_candidates
   @export_candidates ||= formatted_candidates_to_import(
     candidates_by_attribute(
-      read_sheet(NB_EXPORT_SPREADSHEET_ID, NB_EXPORT_SHEET_ID),
+      read_sheet(NB_EXPORT_SPREADSHEET_ID),
       'nationbuilder_id',
     )
   )
@@ -354,9 +351,9 @@ end
 
 def candidate_view_sheet_id(spreadsheet_id)
   service
-    .get_spreadsheet('1SDpSo1sD0DykFa82IiJOy9iSV7iJn9KaTFbmNBz_zqE')
+    .get_spreadsheet(spreadsheet_id)
     .sheets
-    .find { |sheet| sheet.properties.title = MASTER_SCHEMA_SHEET_ID }
+    .first
     .properties
     .sheet_id
 end
@@ -436,10 +433,7 @@ def ad_sheet_exists?(ad)
 end
 
 def ad_spreadsheet_columns
-  @ad_spreadsheet_columns ||= sheet_columns(
-    MASTER_SCHEMA_SPREADSHEET_ID,
-    MASTER_SCHEMA_SHEET_ID + '!1:1',
-  )[0]
+  @ad_spreadsheet_columns ||= sheet_columns(MASTER_SCHEMA_SPREADSHEET_ID)
 end
 
 def add_candidates_to_spreadsheets(candidates_to_append)
@@ -527,7 +521,7 @@ def formatted_candidates_to_import(candidates)
       unless formatted_attributes['Address']
         candidiates_with_invalid_addresses << values_and_type(
           INVALID_ADDRESSES_SPREADSHEET_ID,
-          NB_EXPORT_SHEET_ID,
+          first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
           export_candidate.values,
           type
         )
@@ -544,10 +538,10 @@ def formatted_candidates_to_import(candidates)
       }"
       unless ad_valid?(formatted_attributes['AD'])
         candidiates_with_invalid_ads << values_and_type(
-          INVALID_ADeS_SPREADSHEET_ID,
-          NB_EXPORT_SHEET_ID,
+          INVALID_ADS_SPREADSHEET_ID,
+          first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
           export_candidate.values,
-          type
+          type,
         )
         next cands_to_imp
       end
@@ -589,7 +583,7 @@ def add_invalid_candidates_to_spreadsheets(
           .include?(candidate.first)
       end,
       INVALID_ADDRESSES_SPREADSHEET_ID,
-      NB_EXPORT_SHEET_ID,
+      first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
     )
   end
   if candidiates_with_invalid_ads.length > 0
@@ -600,7 +594,7 @@ def add_invalid_candidates_to_spreadsheets(
           .include?(candidate.first)
       end,
       INVALID_ADS_SPREADSHEET_ID,
-      NB_EXPORT_SHEET_ID,
+      first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
     )
   end
 end
@@ -622,22 +616,20 @@ def values_and_type(spreadsheet_id, page_id, values, type=nil)
 end
 
 def column_index(spreadsheet_id, page_id, field_name)
-  @column_index ||= Hash.new do |hash, field_name|
-    hash[field_name] =
-      sheet_columns(spreadsheet_id, page_id)[0].find_index do |column_name|
-        column_name == field_name
+  column_id = spreadsheet_id + page_id + field_name
+  @column_index ||= Hash.new do |h, field_name|
+    h[column_id] =
+      sheet_columns(spreadsheet_id, page_id).find_index do |column_name|
+        column_name == column_id
       end
   end
-  @column_index[field_name]
+  @column_index[column_id]
 end
 
 def existing_candidates_with_invalid_addresses
   # Load all candidates from each sheet into an object for quick lookup.
   @existing_candidates_with_invalid_addresses ||= candidates_by_attribute(
-    read_sheet(
-      INVALID_ADDRESSES_SPREADSHEET_ID,
-      NB_EXPORT_SHEET_ID,
-    ),
+    read_sheet(INVALID_ADDRESSES_SPREADSHEET_ID),
     'nationbuilder_id',
   )
 end
@@ -645,12 +637,22 @@ end
 def existing_candidates_with_invalid_ads
   # Load all candidates from each sheet into an object for quick lookup.
   @existing_candidates_with_invalid_ads ||= candidates_by_attribute(
-    read_sheet(
-      INVALID_ADS_SPREADSHEET_ID,
-      NB_EXPORT_SHEET_ID,
-    ),
+    read_sheet(INVALID_ADS_SPREADSHEET_ID),
     'nationbuilder_id',
   )
+end
+
+def first_sheet_title(spreadsheet_id)
+  @first_sheet_title ||= Hash.new do |h, spreadsheet_id|
+    h[spreadsheet_id] =
+      service
+        .get_spreadsheet(spreadsheet_id)
+        .sheets
+        .first
+        .properties
+        .title
+  end
+  @first_sheet_title[spreadsheet_id]
 end
 
 def create_new_ad_spreadsheet(ad)
@@ -663,7 +665,7 @@ def create_new_ad_spreadsheet(ad)
   )
   service.append_spreadsheet_value(
     ENV_VARS_SPREADSHEET_ID,
-    DISTRICT_TO_SPREADSHEET_ID,
+    first_sheet_title(ENV_VARS_SPREADSHEET_ID),
     Google::Apis::SheetsV4::ValueRange.new(
       values: [[ad, new_ad_spreadsheet.id]]
     ),

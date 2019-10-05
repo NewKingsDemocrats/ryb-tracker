@@ -388,6 +388,7 @@ def candidates_to_move
   @candidates_to_move ||=
     existing_candidates.reduce({}) do |candidates, (id, candidate)|
       current_ad, current_ed = candidate.values_at('AD', 'ED')
+      binding.pry
       new_ad, new_ed = get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
       unless current_ad == new_ad
         updated_candidate = candidate.dup
@@ -540,10 +541,7 @@ def formatted_candidates_to_import(candidates)
         )
         next cands_to_imp
       end
-      events, status = read_sheet(
-        ENV_VARS_SPREADSHEET_ID,
-        'excel formulas'
-      )[0].values_at('Events', 'Status')
+      events, status = get_events_and_status
       cands_to_imp[id] = {
         'Name' => "#{
           export_candidate['first_name']
@@ -596,6 +594,13 @@ def add_invalid_candidates_to_spreadsheets(
       first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
     )
   end
+end
+
+def get_events_and_status
+  @events_and_status ||= read_sheet(
+    ENV_VARS_SPREADSHEET_ID,
+    'excel formulas'
+  )[0].values_at('Events', 'Status')
 end
 
 def type

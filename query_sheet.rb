@@ -540,6 +540,10 @@ def formatted_candidates_to_import(candidates)
         )
         next cands_to_imp
       end
+      events, status = read_sheet(
+        ENV_VARS_SPREADSHEET_ID,
+        'excel formulas'
+      )[0].values_at('Events', 'Status')
       cands_to_imp[id] = {
         'Name' => "#{
           export_candidate['first_name']
@@ -550,8 +554,8 @@ def formatted_candidates_to_import(candidates)
         'RYBID' => export_candidate['nationbuilder_id'],
         'Phone' => format_phone_number(export_candidate),
         'Email' => export_candidate['email'],
-        'Status' => '=if(indirect("a"&row())="","",if(indirect("p"&row())="Declined","D",if(indirect("cd"&row())="yes","RECD",if(indirect("cc"&row())="Done","P/DONE",if(indirect("cc"&row())="Moving Along","P/OK",if(indirect("cc"&row())="Started","P/S",if(indirect("cc"&row())="Struggling","P/STRG",if(indirect("cc"&row())="Not Started","P/NS",if(indirect("ca"&row())="yes","P/PKU",if(indirect("by"&row())="yes","P/PLAN",if(indirect("bx"&row())="Attempt #3","P/3C",if(indirect("bx"&row())="Attempt #2","P/2C",if(indirect("bx"&row())="Attempt #1","P/1C",if(indirect("bq"&row())>0,if(indirect("p"&row())="Yes",if(indirect("bx"&row())="No Attempts","P/NC",if(indirect("s"&row())="Complete",if(indirect("bq"&row())>1,"INT/E+","INT/E"),"CONF/E")),if(indirect("p"&row())="Maybe","MAY/E",if(indirect("o"&row())="Attempt #3","3C/E",if(indirect("o"&row())="Attempt #2","2C/E",if(indirect("o"&row())="Attempt #1","1C/E","NC/E"))))),if(indirect("s"&row())="Complete",if(indirect("bx"&row())="No Attempts","P/NC","INT"),if(indirect("p"&row())="Yes","CONF",if(indirect("p"&row())="Maybe","MAY",if(indirect("o"&row())="Attempt #3","3C",if(indirect("o"&row())="Attempt #2","2C",if(indirect("o"&row())="Attempt #1","1C","NC")))))))))))))))))))) ',
-        'Events' => '=if(indirect("af"&row())="Yes",1,0)+if(indirect("ak"&row())="Yes",1,0)+if(indirect("ap"&row())="Yes",1,0)+if(indirect("au"&row())="Yes",1,0)+if(indirect("az"&row())="Yes",1,0)+if(indirect("be"&row())="Yes",1,0)+if(indirect("bj"&row())="Yes",1,0)+if(indirect("bo"&row())="Yes",1,0)',
+        'Status' => "=#{status}",
+        'Events' => "=#{events}",
       }.merge(formatted_attributes)
       cands_to_imp
     end

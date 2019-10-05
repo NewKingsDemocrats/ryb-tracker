@@ -114,14 +114,14 @@ def append_candidate_to_spreadsheet(
 end
 
 def append_candidates_to_spreadsheet(
-  candidiates,
+  candidates,
   spreadsheet_id,
   range=first_sheet_title(spreadsheet_id)
 )
   service.append_spreadsheet_value(
     spreadsheet_id,
     range,
-    Google::Apis::SheetsV4::ValueRange.new(values: candidiates),
+    Google::Apis::SheetsV4::ValueRange.new(values: candidates),
     value_input_option: 'USER_ENTERED',
   )
 end
@@ -197,7 +197,6 @@ def assembly_district_sheets
     @assembly_district_sheets =
       read_sheet(ENV_VARS_SPREADSHEET_ID)
     @ad_spreadsheets_cache_valid = true
-    @assembly_district_sheets
   end
   @assembly_district_sheets
 end
@@ -311,13 +310,13 @@ def check_and_move_existing_candidates
       spreadsheet_id,
     )
   end
-  remove_outdated_candidiates
+  remove_outdated_candidates
   puts "moved #{
     candidates_to_move.values.flatten.count
   } candidates"
 end
 
-def remove_outdated_candidiates
+def remove_outdated_candidates
   current_moved_candidates_rows.each do |ad, rows|
     spreadsheet_id = assembly_district_sheets.find do |sheet|
       sheet['assembly_district'] == ad
@@ -385,15 +384,37 @@ def moved_candidates_by_current_ad
 end
 
 def candidates_to_move
-  @candidates_to_move ||=
-    existing_candidates.reduce({}) do |candidates, (id, candidate)|
+  @candidates_to_move ||= begin
+    candidates_with_invalid_addresses = []
+    candidates_with_invalid_ads = []
+    candidates = existing_candidates.reduce({}) do |candidates, (id, candidate)|
       current_ad, current_ed = candidate.values_at('AD', 'ED')
-      binding.pry
-      new_ad, new_ed = get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
+      unless candidate['Address'].match(
+        /\d+ \w+.*,? brooklyn,? ny,? 112\d{2}([-—]\d{4})?$/i
+      )
+        candidates_with_invalid_addresses << values_and_type(
+          INVALID_ADDRESSES_SPREADSHEET_ID,
+          'existing candidates',
+          candidate.values,
+          type
+        )
+        next candidates
+      end
+      new_ad, new_ed =
+        get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
       unless current_ad == new_ad
         updated_candidate = candidate.dup
         updated_candidate['AD'] = new_ad
         updated_candidate['ED'] = new_ed
+        unless ad_valid?(updated_candidate['AD'])
+          candidates_with_invalid_ads << values_and_type(
+            INVALID_ADS_SPREADSHEET_ID,
+            'existing candidates',
+            updated_candidate.values,
+            type,
+          )
+          next cands_to_imp
+        end
         if candidates[new_ad]
           candidates[new_ad] << updated_candidate
         else
@@ -402,6 +423,13 @@ def candidates_to_move
       end
       candidates
     end
+    add_invalid_candidates_to_spreadsheets(
+      candidates_with_invalid_addresses,
+      candidates_with_invalid_ads,
+      existing=true,
+    )
+    candidates
+  end
 end
 
 def process_new_candidate(export_candidate, candidates_to_append)
@@ -443,8 +471,8 @@ def add_candidates_to_spreadsheets(candidates_to_append)
   end
 end
 
-def ads_match?(existing_candidiate, export_candidate)
-  existing_candidiate['AD'].to_s == export_candidate['AD'].to_s
+def ads_match?(existing_candidate, export_candidate)
+  existing_candidate['AD'].to_s == export_candidate['AD'].to_s
 end
 
 def basic_info_changed?(existing_candidate, export_candidate)
@@ -508,14 +536,14 @@ def titleize(str)
 end
 
 def formatted_candidates_to_import(candidates)
-  candidiates_with_invalid_addresses = []
-  candidiates_with_invalid_ads = []
+  candidates_with_invalid_addresses = []
+  candidates_with_invalid_ads = []
   formatted_candidates =
     candidates.reduce({}) do |cands_to_imp, (id, export_candidate)|
       formatted_attributes = {}
       formatted_attributes['Address'] = format_address(export_candidate)
       unless formatted_attributes['Address']
-        candidiates_with_invalid_addresses << values_and_type(
+        candidates_with_invalid_addresses << values_and_type(
           INVALID_ADDRESSES_SPREADSHEET_ID,
           first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
           export_candidate.values,
@@ -533,7 +561,7 @@ def formatted_candidates_to_import(candidates)
         formatted_attributes['ED']
       }"
       unless ad_valid?(formatted_attributes['AD'])
-        candidiates_with_invalid_ads << values_and_type(
+        candidates_with_invalid_ads << values_and_type(
           INVALID_ADS_SPREADSHEET_ID,
           first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
           export_candidate.values,
@@ -558,8 +586,8 @@ def formatted_candidates_to_import(candidates)
       cands_to_imp
     end
     add_invalid_candidates_to_spreadsheets(
-      candidiates_with_invalid_addresses,
-      candidiates_with_invalid_ads
+      candidates_with_invalid_addresses,
+      candidates_with_invalid_ads,
     )
   formatted_candidates
 end
@@ -569,29 +597,34 @@ def ad_valid?(ad)
 end
 
 def add_invalid_candidates_to_spreadsheets(
-  candidiates_with_invalid_addresses,
-  candidiates_with_invalid_ads
+  candidates_with_invalid_addresses,
+  candidates_with_invalid_ads,
+  existing=false
 )
-  if candidiates_with_invalid_addresses.length > 0
+  if candidates_with_invalid_addresses.length > 0
     append_candidates_to_spreadsheet(
-      candidiates_with_invalid_addresses.select do |candidate|
+      candidates_with_invalid_addresses.select do |candidate|
         !existing_candidates_with_invalid_addresses
           .keys
           .include?(candidate.first)
       end,
       INVALID_ADDRESSES_SPREADSHEET_ID,
-      first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
+      existing ?
+        'existing candidates' :
+        first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
     )
   end
-  if candidiates_with_invalid_ads.length > 0
+  if candidates_with_invalid_ads.length > 0
     append_candidates_to_spreadsheet(
-      candidiates_with_invalid_ads.select do |candidate|
+      candidates_with_invalid_ads.select do |candidate|
         !existing_candidates_with_invalid_ads
           .keys
           .include?(candidate.first)
       end,
       INVALID_ADS_SPREADSHEET_ID,
-      first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
+      existing ?
+        'existing candidates' :
+        first_sheet_title(INVALID_ADS_SPREADSHEET_ID),
     )
   end
 end

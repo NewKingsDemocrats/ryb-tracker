@@ -413,7 +413,7 @@ def candidates_to_move
             updated_candidate.values,
             type,
           )
-          next cands_to_imp
+          next candidates
         end
         if candidates[new_ad]
           candidates[new_ad] << updated_candidate

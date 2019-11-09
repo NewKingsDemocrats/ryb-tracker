@@ -236,7 +236,7 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
     candidate[attribute] &&
       candidate[attribute].length > 0
   end.reduce({}) do |obj, candidate|
-    if obj[candidate[attribute]]
+    if obj[candidate[attribute]] && attribute != 'nationbuilder_id'
       obj[candidate[attribute]] << candidate
     else
       obj[candidate[attribute]] = one_to_many ? [candidate] : candidate
@@ -491,7 +491,12 @@ end
 
 def get_ad_and_ed_from_cc_sunlight(address)
   base_uri = 'https://ccsunlight.org/api/v1/address/'
-  uri = URI(base_uri + CGI.escape(address))
+  uri = URI(
+    base_uri +
+    CGI.escape(
+      address_without_apt_no(address)
+    )
+  )
   request = Net::HTTP::Get.new(path=uri)
   response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
     http.request(request)
@@ -501,6 +506,10 @@ def get_ad_and_ed_from_cc_sunlight(address)
     ad: ad.to_s,
     ed: ed.to_s,
   }
+end
+
+def address_without_apt_no(address)
+  address.gsub(/\s(#|no|apt)\.?\s*\w+/i, '')
 end
 
 def format_address(candidate)

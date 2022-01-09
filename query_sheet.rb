@@ -10,6 +10,7 @@ ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 NB_EXPORT_SPREADSHEET_ID = ARGV[1]
 INVALID_ADDRESSES_SPREADSHEET_ID = '1dlC9ZM1tMLW5XazyR6BVRDRapbllx_d6gko--41p7a8'
+NULL_ADDRESSES_SPREADSHEET_ID = '[NULL_ADDRESSES_SPREADSHEET_ID]'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
 UPDATED_CANDIDATES_SPREADSHEET_ID = '13-xUnEJScMhvrBFq7niyd2ZWy1iO3M41Aro-L_Cwg8o'
 MOVED_CANDIDATES_SPREADSHEET_ID = '10qTJW5MLbyf8jKNrFyQPYz_wpLsM3EG4Zgbnizv-fIU'
@@ -389,17 +390,17 @@ def candidates_to_move
     candidates_with_invalid_ads = []
     candidates = existing_candidates.reduce({}) do |candidates, (id, candidate)|
       current_ad, current_ed = candidate.values_at('AD', 'ED')
-      unless candidate['Address'].match(
-        /\d+ \w+.*,? brooklyn,? ny,? 112\d{2}([-—]\d{4})?$/i
-      )
-        candidates_with_invalid_addresses << values_and_type(
-          INVALID_ADDRESSES_SPREADSHEET_ID,
-          'existing candidates',
-          candidate.values,
-          type
-        )
-        next candidates
-      end
+      # unless candidate['Address'].match(
+      #   /\d+ \w+.*,? brooklyn,? ny,? 112\d{2}([-—]\d{4})?$/i
+      # )
+      #   candidates_with_invalid_addresses << values_and_type(
+      #     INVALID_ADDRESSES_SPREADSHEET_ID,
+      #     'existing candidates',
+      #     candidate.values,
+      #     type
+      #   )
+      #   next candidates
+      # end
       new_ad, new_ed =
         get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
       unless current_ad == new_ad
@@ -553,8 +554,8 @@ def formatted_candidates_to_import(candidates)
       formatted_attributes['Address'] = format_address(export_candidate)
       unless formatted_attributes['Address']
         candidates_with_invalid_addresses << values_and_type(
-          INVALID_ADDRESSES_SPREADSHEET_ID,
-          first_sheet_title(INVALID_ADDRESSES_SPREADSHEET_ID),
+          NULL_ADDRESSES_SPREADSHEET_ID,
+          first_sheet_title(NULL_ADDRESSES_SPREADSHEET_ID),
           export_candidate.values,
           type
         )

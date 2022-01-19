@@ -401,16 +401,17 @@ def candidates_to_move
             CC Sunlight couldn't get the AD and ED from the following address:
 
               #{candidate['Address']}
-
-            dumping it to the invalid addresses spreadsheet.
+              #{candidate['Address']&.strip&.present? ? 'dumping it to the invalid addresses spreadsheet.' : nil}
           TXT
         )
-        candidates_with_invalid_addresses << values_and_type(
-          INVALID_ADDRESSES_SPREADSHEET_ID,
-          'existing candidates',
-          candidate.values,
-          type
-        )
+        if candidate['Address']&.strip&.present?
+          candidates_with_invalid_addresses << values_and_type(
+            INVALID_ADDRESSES_SPREADSHEET_ID,
+            'existing candidates',
+            candidate.values,
+            type
+          )
+        end
         next candidates
       end
       unless current_ad == new_ad

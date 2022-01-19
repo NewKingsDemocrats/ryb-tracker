@@ -397,21 +397,9 @@ def candidates_to_move
             values_at(:ad, :ed)
       rescue Net::ReadTimeout, TypeError
         puts(
-          <<~TXT
-            CC Sunlight couldn't get the AD and ED from the following address:
-
-              #{candidate['Address']}
-              #{candidate['Address']&.strip&.present? ? 'dumping it to the invalid addresses spreadsheet.' : nil}
-          TXT
+          "CC Sunlight couldn't get the AD and ED from the"\
+            "following address: #{candidate['Address']}"
         )
-        if candidate['Address']&.strip&.present?
-          candidates_with_invalid_addresses << values_and_type(
-            INVALID_ADDRESSES_SPREADSHEET_ID,
-            'existing candidates',
-            candidate.values,
-            type
-          )
-        end
         next candidates
       end
       unless current_ad == new_ad

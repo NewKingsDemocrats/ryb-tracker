@@ -397,8 +397,15 @@ def candidates_to_move
             values_at(:ad, :ed)
       rescue Net::ReadTimeout, TypeError
         puts(
-          "CC Sunlight couldn't get the AD and ED from the"\
-            "following address: #{candidate['Address']}"
+          <<~TXT
+
+          CC Sunlight couldn't get the AD and ED for the following candidate:
+
+            Current AD: #{current_ad}
+            RYBID: #{id}
+            Address: #{candidate['Address']}
+
+          TXT
         )
         next candidates
       end

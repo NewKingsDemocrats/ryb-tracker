@@ -579,7 +579,7 @@ def formatted_candidates_to_import(candidates)
         )
         next cands_to_imp
       end
-      events, status = get_events_and_status
+      pronouns, status, enough,seats,sigs = get_events_and_status
       cands_to_imp[id] = {
         'Name' => "#{
           export_candidate['first_name']

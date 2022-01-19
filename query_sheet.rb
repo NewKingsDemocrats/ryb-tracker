@@ -237,7 +237,7 @@ def candidates_by_attribute(candidates, attribute, one_to_many=false)
     candidate[attribute] &&
       candidate[attribute].length > 0
   end.reduce({}) do |obj, candidate|
-    if obj[candidate[attribute]] && attribute != 'nationbuilder_id'
+    if obj[candidate[attribute]] && attribute != 'nationbuilder_id' && attribute != 'RYBID'
       obj[candidate[attribute]] << candidate
     else
       obj[candidate[attribute]] = one_to_many ? [candidate] : candidate
@@ -390,19 +390,28 @@ def candidates_to_move
     candidates_with_invalid_ads = []
     candidates = existing_candidates.reduce({}) do |candidates, (id, candidate)|
       current_ad, current_ed = candidate.values_at('AD', 'ED')
-      # unless candidate['Address'].match(
-      #   /\d+ \w+.*,? brooklyn,? ny,? 112\d{2}([-—]\d{4})?$/i
-      # )
-      #   candidates_with_invalid_addresses << values_and_type(
-      #     INVALID_ADDRESSES_SPREADSHEET_ID,
-      #     'existing candidates',
-      #     candidate.values,
-      #     type
-      #   )
-      #   next candidates
-      # end
-      new_ad, new_ed =
-        get_ad_and_ed_from_cc_sunlight(candidate['Address']).values_at(:ad, :ed)
+      begin
+        new_ad, new_ed =
+          get_ad_and_ed_from_cc_sunlight(candidate['Address']).
+            values_at(:ad, :ed)
+      rescue Net::ReadTimeout
+        puts(
+          <<~TXT
+            CC Sunlight couldn't get the AD and ED from the following address:
+
+              #{candidate['Address']}
+
+            dumping it to the invalid addresses spreadsheet.
+          TXT
+        )
+        candidates_with_invalid_addresses << values_and_type(
+          INVALID_ADDRESSES_SPREADSHEET_ID,
+          'existing candidates',
+          candidate.values,
+          type
+        )
+        next candidates
+      end
       unless current_ad == new_ad
         updated_candidate = candidate.dup
         updated_candidate['AD'] = new_ad

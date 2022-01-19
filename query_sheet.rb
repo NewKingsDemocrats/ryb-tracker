@@ -388,13 +388,14 @@ def candidates_to_move
   @candidates_to_move ||= begin
     candidates_with_invalid_addresses = []
     candidates_with_invalid_ads = []
-    candidates = existing_candidates.reduce({}) do |candidates, (id, candidate)|
+    candidates = existing_candidates.each_with_index.reduce({}) do |candidates, ((id, candidate), i)|
+      puts "Checking candidate #{i + 1} of #{existing_candidates.length}"
       current_ad, current_ed = candidate.values_at('AD', 'ED')
       begin
         new_ad, new_ed =
           get_ad_and_ed_from_cc_sunlight(candidate['Address']).
             values_at(:ad, :ed)
-      rescue Net::ReadTimeout
+      rescue Net::ReadTimeout, TypeError
         puts(
           <<~TXT
             CC Sunlight couldn't get the AD and ED from the following address:

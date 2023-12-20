@@ -5,8 +5,8 @@ from shapely.geometry import Point
 
 home = "d:/dropbox/politics/datateam/"
 
-#my google API key
-gmaps = googlemaps.Client(key='AIzaSyCzMvGLMd73xvbq6M7Hi8ItiOBVe6ABGQU')
+#my google API key (I removed it here so it's not just sitting out here?)
+gmaps = googlemaps.Client(key='')
 
 address_file = home + "ryb2024/test_addresses.csv"
 election_district_file = home + "mapping/election districts.geojson"

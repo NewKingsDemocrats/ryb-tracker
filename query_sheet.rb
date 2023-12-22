@@ -9,6 +9,9 @@ require 'google/apis/drive_v3'
 ENV_VARS_SPREADSHEET_ID = '10yQzyt4_JMZmFeVYLaWi2DinP-oPiq6cfwXfSFsoEvw'
 MASTER_SCHEMA_SPREADSHEET_ID = '1KABFR083wl6Ok0WEIsPs1lefZt7U9PJz1iuneQ7Prc0'
 NB_EXPORT_SPREADSHEET_ID = ARGV[1]
+GEOCODED_DISTRICTS_FILE = ARGV[2]
+GOOGLE_MAPS_API_KEY = ARGV[3]
+GEOCODER_SCRIPT_FILE = './get_ad_ed.py'
 INVALID_ADDRESSES_SPREADSHEET_ID = '1lDikPRZPVxnVjVbquvsCIRypuu_2hxJ4OA5jjS1H-Lg'
 NULL_ADDRESSES_SPREADSHEET_ID = '1B0Ip7kZ6reEs9La0B7t9Z8V7eIg3SVjHXzUgRzuxg10'
 INVALID_ADS_SPREADSHEET_ID = '17GK6MpEz-tHK_h72Wrp68mu-Jx5a15FuYCYQD6F1iKE'
@@ -393,7 +396,7 @@ def candidates_to_move
       current_ad, current_ed = candidate.values_at('AD', 'ED')
       begin
         new_ad, new_ed =
-          get_ad_and_ed_from_cc_sunlight(candidate['Address']).
+          get_ad_and_ed_from_geocoder(candidate['Address']).
             values_at(:ad, :ed)
       rescue Net::ReadTimeout, TypeError
         puts(
@@ -496,19 +499,9 @@ def column_to_letter(num)
   end
 end
 
-def get_ad_and_ed_from_cc_sunlight(address)
-  base_uri = 'https://ccsunlight.org/api/v1/address/'
-  uri = URI(
-    base_uri +
-    CGI.escape(
-      address_without_apt_no(address)
-    )
-  )
-  request = Net::HTTP::Get.new(path=uri)
-  response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-    http.request(request)
-  end
-  ad, ed = JSON.parse(response.body).values_at('ad', 'ed')
+def get_ad_and_ed_from_geocoder(address)
+  ad_ed = `#{GEOCODER_SCRIPT_FILE} '#{address}' '#{GEOCODED_DISTRICTS_FILE}' #{GOOGLE_MAPS_API_KEY}`
+  ad, ed = ad_ed.split(' ').map(&:to_i)
   {
     ad: ad.to_s,
     ed: ed.to_s,
@@ -569,7 +562,7 @@ def formatted_candidates_to_import(candidates)
       end
       puts formatted_attributes['Address']
       formatted_attributes['AD'], formatted_attributes['ED'] =
-        get_ad_and_ed_from_cc_sunlight(formatted_attributes['Address'])
+        get_ad_and_ed_from_geocoder(formatted_attributes['Address'])
           .values_at(:ad, :ed)
       puts "AD: #{
         formatted_attributes['AD']

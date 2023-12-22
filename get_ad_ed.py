@@ -45,7 +45,7 @@ if __name__ == '__main__':
 	pass in arguments separated by spaces after calling the executable, e.g.,
 		./get_ad_ed.py '123 Anywhere Ave, Brooklyn, NY 11221' 'Election Districts.geojson' myspecialapikey
 	'''
-
+	print(len(sys.argv[1:]),sys.argv[1:])
 	address, election_district_file, api_key = sys.argv[1:]
 
 	maps = Gmaps(address, election_district_file, api_key)

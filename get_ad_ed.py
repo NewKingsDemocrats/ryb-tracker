@@ -1,27 +1,32 @@
 #!/usr/bin/env python
 
-import os
 import sys
 import json
 import googlemaps
+import sqlite3
 from shapely.geometry import Point, shape
 
 class Gmaps:
-	GEOCODED_ADDRESSES_CACHE_FILE = 'geocodedCache.json'
+	DATABASE_FILE = 'geocodedCache.db'
 
 	def __init__(self, address, election_district_file, api_key):
+		self.setup_db()
 		self.client = googlemaps.Client(key=api_key)
-		self.cached_coordinates = self.get_geocode_cache()
 		self.geocoded_address = self.get_geocoded_address(address)
 		self.ad, self.ed = self.get_aded(election_district_file)
 
-	def get_geocode_cache(self):
-		if not os.path.isfile(self.GEOCODED_ADDRESSES_CACHE_FILE):
-			f = open(self.GEOCODED_ADDRESSES_CACHE_FILE, 'x')
-			f.close()
-		with open(self.GEOCODED_ADDRESSES_CACHE_FILE, 'r') as f:
-			data = f.read()
-			return json.loads(data) if data else {}
+	def setup_db(self):
+		self.db_connection = sqlite3.connect(self.DATABASE_FILE)
+		self.db_cursor = self.db_connection.cursor()
+		self.find_or_create_table()
+
+	def find_or_create_table(self):
+		self.db_cursor.execute("""
+			SELECT name FROM sqlite_master
+			WHERE type='table' AND name='cached_addresses'
+		""").fetchone() or self.db_cursor.execute("""
+			CREATE TABLE cached_addresses(address, longitude, latitude)
+		""")
 
 	def get_aded(self, election_district_file):
 		with open(election_district_file, 'r') as f:
@@ -32,8 +37,9 @@ class Gmaps:
 					return (self.get_ad(aded), self.get_ed(aded))
 
 	def get_geocoded_address(self, address):
-		if address in self.cached_coordinates:
-			return Point(*self.cached_coordinates[address])
+		cached_coordinates = self.get_cached_coordinates(address)
+		if cached_coordinates:
+			return Point(*cached_coordinates)
 
 		coded_address = self.client.geocode(address)
 		if coded_address:
@@ -45,11 +51,19 @@ class Gmaps:
 		self.update_geocode_cache(address, coordinates)
 		return Point(*coordinates)
 
+	def get_cached_coordinates(self, address):
+		return self.db_cursor.execute(f"""
+			SELECT longitude, latitude FROM cached_addresses
+			WHERE address='{address}'
+		""").fetchone()
+
 	def update_geocode_cache(self, address, coordinates):
-		self.cached_coordinates[address] = coordinates
-		with open(self.GEOCODED_ADDRESSES_CACHE_FILE, 'w') as f:
-			f.write(json.dumps(self.cached_coordinates, indent=4))
-				
+		self.db_cursor.execute(f"""
+			INSERT INTO cached_addresses VALUES
+			('{address}', {coordinates[0]}, {coordinates[1]})
+		""")
+		self.db_connection.commit()
+
 	def get_ad(self, aded):
 		if str(aded).isdigit() and len(str(aded)) == 5:
 			return str(aded)[:2]

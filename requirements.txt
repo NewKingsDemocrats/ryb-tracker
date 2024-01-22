@@ -1,0 +1,4 @@
+google_api_python_client==2.65.0
+googlemaps==4.10.0
+protobuf==4.25.2
+Shapely==2.0.2

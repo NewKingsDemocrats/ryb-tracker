@@ -26,6 +26,8 @@ class Gmaps:
             WHERE type='table' AND name='cached_addresses'
         """).fetchone() or self.db_cursor.execute("""
             CREATE TABLE cached_addresses(address, longitude, latitude)
+        """) and self.db_cursor.execute("""
+            CREATE INDEX index_address ON cached_addresses(address)
         """)
 
     def get_aded(self, election_district_file):
